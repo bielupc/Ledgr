@@ -1,0 +1,541 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Tailwind's own `hover:` emits a bare `:hover`, which a touch device fires on
+ * tap and then leaves stuck. Row hovers use these instead.
+ */
+@custom-variant hoverfine {
+  @media (hover: hover) and (pointer: fine) {
+    &:hover {
+      @slot;
+    }
+  }
+}
+
+@custom-variant group-hoverfine {
+  @media (hover: hover) and (pointer: fine) {
+    &:is(:where(.group):hover *) {
+      @slot;
+    }
+  }
+}
+
+/*
+  Brand constants from `Ledgr Brand Guidelines C.dc.html`. These five never
+  change between themes — only which role each one plays does.
+*/
+:root {
+  --carbon: #080a09;
+  --carbon-2: #151816;
+  --paper: #eef1ee;
+  --emerald: #00b36b;
+  --emerald-deep: #0a5c3a;
+
+  --radius: 0.875rem;
+}
+
+/* Light: Paper ground, Carbon ink. A derivation, not specified by the guidelines. */
+:root {
+  --background: var(--paper);
+  --foreground: var(--carbon);
+
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --card: #ffffff;
+  --card-foreground: var(--carbon);
+  --popover: #ffffff;
+  --popover-foreground: var(--carbon);
+
+  --muted: color-mix(in srgb, var(--carbon) 4%, transparent);
+  --muted-foreground: color-mix(in srgb, var(--carbon) 58%, transparent);
+  --subtle-foreground: color-mix(in srgb, var(--carbon) 42%, transparent);
+
+  --primary: var(--emerald);
+  --primary-foreground: var(--paper);
+
+  /* #00B36B on Paper is ~2.3:1 and fails as text, so light mode reads in
+     Emerald Deep and reserves bright Emerald for fills and chart marks. */
+  --accent-ink: var(--emerald-deep);
+
+  --secondary: color-mix(in srgb, var(--carbon) 5%, transparent);
+  --secondary-foreground: var(--carbon);
+  --accent: color-mix(in srgb, var(--carbon) 5%, transparent);
+  --accent-foreground: var(--carbon);
+
+  --destructive: #c8372d;
+  --destructive-foreground: #ffffff;
+  --positive: var(--emerald-deep);
+  --negative: #c8372d;
+
+  --border: color-mix(in srgb, var(--carbon) 12%, transparent);
+  --border-strong: color-mix(in srgb, var(--carbon) 20%, transparent);
+  --input: color-mix(in srgb, var(--carbon) 14%, transparent);
+  --ring: var(--emerald);
+
+  --dither-ink: 8, 10, 9;
+  --shadow-ambient: 8 10 9;
+  /* 1px inset top highlight, so a recessed plane reads as a bevel in the
+     material rather than as a divider rule. */
+  --bevel: rgba(8, 10, 9, 0.07);
+
+  /*
+   * Categorical chart hues. Emerald holds slot 1 so the brand still leads, but
+   * a category encoding has to be separable to be correct — nine tints of one
+   * hue are unreadable. Generated in OKLCH inside the light band and verified
+   * against the dataviz six checks (lightness, chroma, CVD adjacency,
+   * normal-vision floor, contrast). Assign in order; never cycle.
+   */
+  --chart-1: #039256;
+  --chart-2: #a552b7;
+  --chart-3: #ae6700;
+  --chart-4: #017dd6;
+  --chart-5: #cb454f;
+  --chart-6: #7366d9;
+  --chart-7: #7f8002;
+  --chart-other: #6b7280;
+
+  --chart-grid: color-mix(in srgb, var(--carbon) 8%, transparent);
+  --chart-axis: color-mix(in srgb, var(--carbon) 38%, transparent);
+
+  /* Resting and inspected strength of a share cell. Light needs far more of the
+     hue for the same weight: mixing 52% into white gives a pastel, which is the
+     exact texture the brand's anti-references rule out. */
+  --share-rest: 82%;
+  --share-lit: 100%;
+
+  color-scheme: light;
+}
+
+/* Dark: the brand as specified. 78 Carbon / 18 Paper / 4 Emerald. */
+.dark {
+  --share-rest: 52%;
+  --share-lit: 88%;
+
+  --background: var(--carbon);
+  --foreground: var(--paper);
+
+  --surface: var(--carbon-2);
+  --surface-raised: #1b1f1d;
+  --card: var(--carbon-2);
+  --card-foreground: var(--paper);
+  --popover: #1b1f1d;
+  --popover-foreground: var(--paper);
+
+  --muted: color-mix(in srgb, var(--paper) 6%, transparent);
+  --muted-foreground: color-mix(in srgb, var(--paper) 62%, transparent);
+  --subtle-foreground: color-mix(in srgb, var(--paper) 45%, transparent);
+
+  --primary: var(--emerald);
+  --primary-foreground: var(--paper);
+  --accent-ink: var(--emerald);
+
+  --secondary: color-mix(in srgb, var(--paper) 8%, transparent);
+  --secondary-foreground: var(--paper);
+  --accent: color-mix(in srgb, var(--paper) 8%, transparent);
+  --accent-foreground: var(--paper);
+
+  --destructive: #ff6b5e;
+  --destructive-foreground: var(--carbon);
+  --positive: var(--emerald);
+  --negative: #ff6b5e;
+
+  --border: color-mix(in srgb, var(--paper) 10%, transparent);
+  --border-strong: color-mix(in srgb, var(--paper) 16%, transparent);
+  --input: color-mix(in srgb, var(--paper) 14%, transparent);
+  --ring: var(--emerald);
+
+  --dither-ink: 238, 241, 238;
+  --shadow-ambient: 0 0 0;
+  --bevel: rgba(238, 241, 238, 0.08);
+
+  /* Same hues re-stepped for the dark surface — selected, not flipped. */
+  --chart-1: #06a763;
+  --chart-2: #b865cb;
+  --chart-3: #c67707;
+  --chart-4: #1e8fee;
+  --chart-5: #e05860;
+  --chart-6: #8479ee;
+  --chart-7: #929208;
+  --chart-other: #8b9199;
+
+  --chart-grid: color-mix(in srgb, var(--paper) 7%, transparent);
+  --chart-axis: color-mix(in srgb, var(--paper) 40%, transparent);
+
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-subtle-foreground: var(--subtle-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent-ink: var(--accent-ink);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-positive: var(--positive);
+  --color-negative: var(--negative);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-chart-6: var(--chart-6);
+  --color-chart-7: var(--chart-7);
+  --color-chart-other: var(--chart-other);
+
+  --color-carbon: var(--carbon);
+  --color-carbon-2: var(--carbon-2);
+  --color-paper: var(--paper);
+  --color-emerald: var(--emerald);
+  --color-emerald-deep: var(--emerald-deep);
+
+  --font-sans: 'Instrument Sans Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'DM Mono', ui-monospace, 'SF Mono', monospace;
+
+  --radius-sm: calc(var(--radius) - 6px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 6px);
+  --radius-2xl: calc(var(--radius) + 10px);
+  --radius-3xl: calc(var(--radius) + 18px);
+
+  /* Deliberate, snappy. Nothing in the UI should feel like it is easing in. */
+  --ease-out-brand: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out-brand: cubic-bezier(0.65, 0, 0.35, 1);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-weight: 500;
+    overscroll-behavior-y: none;
+  }
+
+  ::selection {
+    background-color: color-mix(in srgb, var(--emerald) 30%, transparent);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  /* Figures, timestamps and labels — anything that belongs in a cell. */
+  .tabular {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
+  }
+
+  .label-mono {
+    font-family: var(--font-mono);
+    font-size: 0.625rem;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--subtle-foreground);
+  }
+
+  .display-tight {
+    letter-spacing: -0.04em;
+    font-weight: 700;
+  }
+
+  .heading-tight {
+    letter-spacing: -0.015em;
+    font-weight: 600;
+  }
+
+  /* NumberFlow renders into shadow DOM, so the guidelines' dimmed-decimal
+     treatment has to reach it through ::part. Selecting on the class rather
+     than the tag keeps this independent of the element name the wrapper
+     registers. */
+  /*
+   * Cell meter. Same proportions as the mark (cell 5, gap 1, radius 1) so a run
+   * of cells reads as brand rather than as a progress bar. Cells land in
+   * sequence on arrival and brighten in a left-to-right sweep on row hover,
+   * both driven by the per-cell `--i` index, so there is no JS per cell.
+   */
+  .cell-meter {
+    --cell: 6px;
+    --meter-ink: var(--emerald);
+    display: inline-flex;
+    gap: calc(var(--cell) / 5);
+    flex-shrink: 0;
+  }
+
+  .cell-meter[data-tone='negative'] {
+    --meter-ink: var(--negative);
+  }
+
+  .cell-meter > span {
+    width: var(--cell);
+    height: var(--cell);
+    border-radius: calc(var(--cell) / 5);
+    background-color: color-mix(in srgb, var(--foreground) 9%, transparent);
+    animation: cell-land 240ms var(--ease-out-brand) backwards;
+    animation-delay: calc(var(--meter-delay, 0ms) + var(--i) * 22ms);
+    transition:
+      background-color 180ms var(--ease-out-brand),
+      scale 180ms var(--ease-out-brand);
+    transition-delay: calc(var(--i) * 14ms);
+  }
+
+  .cell-meter > span[data-on] {
+    background-color: color-mix(in srgb, var(--meter-ink) 55%, transparent);
+  }
+
+  /* The run's leading edge is the value; it reads at full strength. */
+  .cell-meter > span[data-lead] {
+    background-color: var(--meter-ink);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .group:hover .cell-meter > span {
+      background-color: color-mix(in srgb, var(--foreground) 20%, transparent);
+    }
+    .group:hover .cell-meter > span[data-on] {
+      background-color: color-mix(in srgb, var(--meter-ink) 88%, transparent);
+    }
+    .group:hover .cell-meter > span[data-lead] {
+      background-color: var(--meter-ink);
+      scale: 1.25;
+    }
+  }
+
+  /*
+   * Column-major so the block fills left to right: rows are explicit, columns
+   * are auto and each takes an equal share of the width, which makes the run
+   * exact at any card width without a single hardcoded pixel.
+   */
+  .share-grid {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    gap: 3px;
+  }
+
+  .share-grid > span {
+    aspect-ratio: 1;
+    border-radius: 3px;
+    /* Chroma comes off here rather than through opacity, so the dim state still
+       has opacity of its own to spend. */
+    background-color: color-mix(in srgb, var(--seg) var(--share-rest), transparent);
+    animation: cell-land 260ms var(--ease-out-brand) backwards;
+    animation-delay: calc(var(--i) * 5ms);
+    transition:
+      opacity 160ms var(--ease-out-brand),
+      background-color 160ms var(--ease-out-brand),
+      scale 160ms var(--ease-out-brand);
+  }
+
+  .share-grid > span[data-empty] {
+    background-color: color-mix(in srgb, var(--foreground) 8%, transparent);
+    opacity: 1;
+  }
+
+  /* Inspecting one share pushes the rest back rather than recolouring them, so
+     the block keeps its shape while the answer stands out. Gated on the
+     container, so the resting state is one flat weight. */
+  .share-grid[data-inspecting] > span[data-dim] {
+    opacity: 0.14;
+  }
+
+  /* No scale here: cells sit one gap apart, so growing them overlaps the
+     neighbours and punches dark diamonds through the corners. The chroma lift
+     is the whole signal. */
+  .share-grid[data-inspecting] > span:not([data-dim]) {
+    background-color: color-mix(in srgb, var(--seg) var(--share-lit), transparent);
+  }
+
+  @keyframes cell-land {
+    from {
+      opacity: 0;
+      scale: 0.4;
+    }
+  }
+
+  /* NumberFlow fades the top and bottom of each reel over a 0.25em band, which
+     at display sizes leaves the neighbouring digit visibly smudged above and
+     below the figure. Zero clips the reel to the line box instead. */
+  .money-flow {
+    /*
+     * NumberFlow's mask is the only thing that narrows the reel's visible window:
+     * the neighbouring digit sits *inside* the host box (which is a full line-height
+     * tall), so `overflow` cannot reach it. Zero is therefore wrong in both
+     * directions - a zero-height gradient is fully opaque, so it removes the clip
+     * as well as the fade, and the whole neighbouring digit shows.
+     *
+     * 0.12em is a little under the slack between cap height and the line box, so
+     * the window lands on the glyph: the fade is a few pixels rather than the
+     * 0.25em default, and it scales with font-size on its own.
+     */
+    --number-flow-mask-height: 0.12em;
+  }
+
+  .money-flow::part(fraction-digit),
+  .money-flow::part(decimal),
+  .money-flow::part(currency),
+  .money-flow::part(literal) {
+    opacity: 0.45;
+  }
+
+  /* The headline figure sets its decimals and symbol smaller than the
+     magnitude, per the guidelines; inside shadow DOM that needs ::part. */
+  .money-hero::part(fraction-digit),
+  .money-hero::part(decimal) {
+    font-size: 0.65em;
+  }
+  .money-hero::part(currency),
+  .money-hero::part(literal) {
+    font-size: 0.48em;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border-strong);
+    border-radius: 999px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--muted-foreground);
+    background-clip: content-box;
+  }
+}
+
+/*
+ * Radix unmounts on close and waits for `animationend`, not `transitionend`, so
+ * overlay exits have to be keyframes rather than transitions. Enter and exit are
+ * deliberately asymmetric: the user is waiting on the way in and has already
+ * moved on by the way out.
+ */
+@keyframes ledgr-veil-in {
+  from {
+    opacity: 0;
+    backdrop-filter: blur(0px) saturate(100%);
+  }
+}
+@keyframes ledgr-veil-out {
+  to {
+    opacity: 0;
+  }
+}
+/*
+ * These animate the `scale` property, not `transform`. Tailwind v4 emits
+ * `translate: -50% -50%` for `translate-x-[-50%]`, so a keyframe that also set
+ * `transform: translate(-50%, -50%)` applied the centring offset twice on the
+ * first frame: the dialog flew in from the top left instead of scaling in place.
+ */
+@keyframes ledgr-modal-in {
+  from {
+    opacity: 0;
+    scale: 0.96;
+  }
+}
+@keyframes ledgr-modal-out {
+  to {
+    opacity: 0;
+    scale: 0.98;
+  }
+}
+@keyframes ledgr-pop-in {
+  from {
+    opacity: 0;
+    scale: 0.96;
+  }
+}
+@keyframes ledgr-pop-out {
+  to {
+    opacity: 0;
+    scale: 0.98;
+  }
+}
+
+@layer components {
+  .anim-veil {
+    /* The ground goes soft, not just dark: at 50% black alone the dashboard
+       behind stays legible and competes with the panel for attention. */
+    backdrop-filter: blur(10px) saturate(115%);
+    animation: ledgr-veil-in 180ms var(--ease-out-brand);
+  }
+  .anim-veil[data-state='closed'] {
+    animation: ledgr-veil-out 130ms var(--ease-out-brand);
+  }
+
+  .anim-modal {
+    animation: ledgr-modal-in 220ms var(--ease-out-brand);
+  }
+  .anim-modal[data-state='closed'] {
+    animation: ledgr-modal-out 140ms var(--ease-out-brand);
+  }
+
+  /* Scales from the trigger, not the centre — the origin variable is set by
+     Radix on the content element. */
+  .anim-pop {
+    animation: ledgr-pop-in 150ms var(--ease-out-brand);
+  }
+  .anim-pop[data-state='closed'] {
+    animation: ledgr-pop-out 110ms var(--ease-out-brand);
+  }
+
+  /* Opened by ⌘K dozens of times a day: any entrance at all reads as lag. */
+  .anim-none,
+  .anim-none[data-state='closed'] {
+    animation: none;
+  }
+}
+
+/*
+ * Reduced motion means gentler, not none: fades and colour changes still carry
+ * meaning, so only movement is removed. Motion's own animations are handled by
+ * <MotionConfig reducedMotion="user"> rather than here.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-property: opacity, background-color, border-color, color, fill, stroke !important;
+    transition-duration: 140ms !important;
+    scroll-behavior: auto !important;
+  }
+}

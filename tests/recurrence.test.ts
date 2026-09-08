@@ -1,0 +1,70 @@
+import { describe, expect, it } from 'vitest'
+import { dueOccurrences, occurrenceDate } from '../shared/recurrence.ts'
+
+describe('occurrenceDate', () => {
+  it('returns the start date at index 0', () => {
+    expect(occurrenceDate('2026-03-15', 'monthly', 1, 0)).toBe('2026-03-15')
+  })
+
+  it('steps daily, weekly and yearly series', () => {
+    expect(occurrenceDate('2026-01-01', 'daily', 1, 9)).toBe('2026-01-10')
+    expect(occurrenceDate('2026-01-01', 'weekly', 2, 3)).toBe('2026-02-12')
+    expect(occurrenceDate('2026-01-01', 'yearly', 1, 2)).toBe('2028-01-01')
+  })
+
+  /*
+   * The reason occurrences are measured from the anchor. Stepping a cursor
+   * would clamp Jan 31 to Feb 28 and then stay on the 28th for every later
+   * month; measuring from the start recovers the 31st wherever it exists.
+   */
+  it('keeps a month-end series anchored to its day of month', () => {
+    const dates = [0, 1, 2, 3, 4].map((i) =>
+      occurrenceDate('2026-01-31', 'monthly', 1, i),
+    )
+    expect(dates).toEqual([
+      '2026-01-31',
+      '2026-02-28',
+      '2026-03-31',
+      '2026-04-30',
+      '2026-05-31',
+    ])
+  })
+
+  it('recovers 29 February on a leap year', () => {
+    expect(occurrenceDate('2024-02-29', 'yearly', 1, 1)).toBe('2025-02-28')
+    expect(occurrenceDate('2024-02-29', 'yearly', 1, 4)).toBe('2028-02-29')
+  })
+
+  it('honours an interval greater than one', () => {
+    expect(occurrenceDate('2026-01-15', 'monthly', 3, 2)).toBe('2026-07-15')
+  })
+})
+
+describe('dueOccurrences', () => {
+  const rule = {
+    startDate: '2026-01-01',
+    frequency: 'monthly' as const,
+    intervalCount: 1,
+    endDate: null,
+  }
+
+  it('collects every occurrence up to and including the through date', () => {
+    const due = dueOccurrences(rule, 0, '2026-03-01')
+    expect(due.map((d) => d.date)).toEqual(['2026-01-01', '2026-02-01', '2026-03-01'])
+  })
+
+  it('resumes from the given index without re-emitting posted occurrences', () => {
+    const due = dueOccurrences(rule, 2, '2026-04-15')
+    expect(due.map((d) => d.date)).toEqual(['2026-03-01', '2026-04-01'])
+    expect(due[0]?.index).toBe(2)
+  })
+
+  it('stops at the end date', () => {
+    const due = dueOccurrences({ ...rule, endDate: '2026-02-15' }, 0, '2026-06-01')
+    expect(due.map((d) => d.date)).toEqual(['2026-01-01', '2026-02-01'])
+  })
+
+  it('returns nothing before the series starts', () => {
+    expect(dueOccurrences(rule, 0, '2025-12-31')).toEqual([])
+  })
+})

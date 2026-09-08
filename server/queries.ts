@@ -1,0 +1,306 @@
+import { format, parseISO, subDays, subMonths } from 'date-fns'
+import type {
+  AccountBalance,
+  BudgetStatus,
+  CategoryTotal,
+  DashboardSummary,
+  MonthlyTotals,
+  NetWorthSnapshot,
+  TransactionRow,
+  TransferRow,
+} from '../shared/types.ts'
+import type { CategoryKind, TransactionQuery, TransferQuery } from '../shared/schemas.ts'
+import type { DB } from './db.ts'
+
+export function monthBounds(month: string): { start: string; end: string } {
+  const start = `${month}-01`
+  const next = parseISO(start)
+  next.setMonth(next.getMonth() + 1)
+  return { start, end: `${format(next, 'yyyy-MM')}-01` }
+}
+
+/** Net worth is the sum of live account balances as they stood on `date`. */
+export function netWorthAsOf(db: DB, date: string): number {
+  const row = db
+    .prepare(
+      `SELECT coalesce(sum(
+         a.initialBalanceCents
+         + coalesce((SELECT sum(t.amountCents) FROM transactions t
+                     WHERE t.accountId = a.id AND t.kind = 'income'
+                       AND t.occurredOn <= @date), 0)
+         - coalesce((SELECT sum(t.amountCents) FROM transactions t
+                     WHERE t.accountId = a.id AND t.kind = 'expense'
+                       AND t.occurredOn <= @date), 0)
+         + coalesce((SELECT sum(r.amountCents) FROM transfers r
+                     WHERE r.toAccountId = a.id AND r.occurredOn <= @date), 0)
+         - coalesce((SELECT sum(r.amountCents) FROM transfers r
+                     WHERE r.fromAccountId = a.id AND r.occurredOn <= @date), 0)
+       ), 0) AS total
+       FROM accounts a
+       WHERE a.deletedAt IS NULL`,
+    )
+    .get({ date }) as { total: number }
+
+  return row.total
+}
+
+export function listAccountBalances(db: DB, includeDeleted = false): AccountBalance[] {
+  return db
+    .prepare(
+      `SELECT id, name, icon, sortOrder, deletedAt, initialBalanceCents, balanceCents
+       FROM accountBalances
+       ${includeDeleted ? '' : 'WHERE deletedAt IS NULL'}
+       ORDER BY sortOrder, name`,
+    )
+    .all() as AccountBalance[]
+}
+
+export function listTransactions(db: DB, query: TransactionQuery): TransactionRow[] {
+  const where: string[] = []
+  const params: Record<string, unknown> = { limit: query.limit }
+
+  if (query.month) {
+    const { start, end } = monthBounds(query.month)
+    where.push('t.occurredOn >= @start AND t.occurredOn < @end')
+    params.start = start
+    params.end = end
+  }
+  if (query.from) {
+    where.push('t.occurredOn >= @from')
+    params.from = query.from
+  }
+  if (query.to) {
+    where.push('t.occurredOn <= @to')
+    params.to = query.to
+  }
+  if (query.kind) {
+    where.push('t.kind = @kind')
+    params.kind = query.kind
+  }
+  if (query.accountId) {
+    where.push('t.accountId = @accountId')
+    params.accountId = query.accountId
+  }
+  if (query.categoryId) {
+    where.push('t.categoryId = @categoryId')
+    params.categoryId = query.categoryId
+  }
+  if (query.search) {
+    where.push('(t.name LIKE @search OR c.name LIKE @search OR a.name LIKE @search)')
+    params.search = `%${query.search}%`
+  }
+
+  // Accounts and categories join without a deletedAt filter: a soft-deleted
+  // one must still render its name in the history it belongs to.
+  return db
+    .prepare(
+      `SELECT t.*,
+              a.name AS accountName, a.icon AS accountIcon,
+              c.name AS categoryName, c.icon AS categoryIcon, c.color AS categoryColor
+       FROM transactions t
+       JOIN accounts a ON a.id = t.accountId
+       LEFT JOIN categories c ON c.id = t.categoryId
+       ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+       ORDER BY t.occurredOn DESC, t.createdAt DESC
+       LIMIT @limit`,
+    )
+    .all(params) as TransactionRow[]
+}
+
+export function getTransactionRow(db: DB, id: string): TransactionRow | undefined {
+  return db
+    .prepare(
+      `SELECT t.*,
+              a.name AS accountName, a.icon AS accountIcon,
+              c.name AS categoryName, c.icon AS categoryIcon, c.color AS categoryColor
+       FROM transactions t
+       JOIN accounts a ON a.id = t.accountId
+       LEFT JOIN categories c ON c.id = t.categoryId
+       WHERE t.id = ?`,
+    )
+    .get(id) as TransactionRow | undefined
+}
+
+export function getTransferRow(db: DB, id: string): TransferRow | undefined {
+  return db
+    .prepare(
+      `SELECT r.*,
+              af.name AS fromAccountName, af.icon AS fromAccountIcon,
+              at2.name AS toAccountName,  at2.icon AS toAccountIcon
+       FROM transfers r
+       JOIN accounts af  ON af.id  = r.fromAccountId
+       JOIN accounts at2 ON at2.id = r.toAccountId
+       WHERE r.id = ?`,
+    )
+    .get(id) as TransferRow | undefined
+}
+
+export function listTransfers(db: DB, query: TransferQuery): TransferRow[] {
+  const where: string[] = []
+  const params: Record<string, unknown> = { limit: query.limit }
+
+  if (query.month) {
+    const { start, end } = monthBounds(query.month)
+    where.push('r.occurredOn >= @start AND r.occurredOn < @end')
+    params.start = start
+    params.end = end
+  }
+  if (query.from) {
+    where.push('r.occurredOn >= @from')
+    params.from = query.from
+  }
+  if (query.to) {
+    where.push('r.occurredOn <= @to')
+    params.to = query.to
+  }
+  if (query.accountId) {
+    where.push('(r.fromAccountId = @accountId OR r.toAccountId = @accountId)')
+    params.accountId = query.accountId
+  }
+  if (query.search) {
+    where.push('(r.note LIKE @search OR af.name LIKE @search OR at2.name LIKE @search)')
+    params.search = `%${query.search}%`
+  }
+
+  return db
+    .prepare(
+      `SELECT r.*,
+              af.name AS fromAccountName, af.icon AS fromAccountIcon,
+              at2.name AS toAccountName,  at2.icon AS toAccountIcon
+       FROM transfers r
+       JOIN accounts af  ON af.id  = r.fromAccountId
+       JOIN accounts at2 ON at2.id = r.toAccountId
+       ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+       ORDER BY r.occurredOn DESC, r.createdAt DESC
+       LIMIT @limit`,
+    )
+    .all(params) as TransferRow[]
+}
+
+/**
+ * Income/expense totals per month, zero-filled so the chart has no gaps.
+ * Reads `transactions` only — transfers are internal movement, not activity.
+ */
+export function monthlyTotals(db: DB, months: number, endMonth: string): MonthlyTotals[] {
+  const first = format(subMonths(parseISO(`${endMonth}-01`), months - 1), 'yyyy-MM')
+  const { end } = monthBounds(endMonth)
+
+  const rows = db
+    .prepare(
+      `SELECT substr(occurredOn, 1, 7) AS month,
+              sum(CASE WHEN kind = 'income'  THEN amountCents ELSE 0 END) AS incomeCents,
+              sum(CASE WHEN kind = 'expense' THEN amountCents ELSE 0 END) AS expenseCents
+       FROM transactions
+       WHERE occurredOn >= @start AND occurredOn < @end
+       GROUP BY month`,
+    )
+    .all({ start: `${first}-01`, end }) as Pick<
+    MonthlyTotals,
+    'month' | 'incomeCents' | 'expenseCents'
+  >[]
+
+  const byMonth = new Map(rows.map((r) => [r.month, r]))
+
+  return Array.from({ length: months }, (_, i) => {
+    const month = format(subMonths(parseISO(`${endMonth}-01`), months - 1 - i), 'yyyy-MM')
+    const row = byMonth.get(month)
+    const incomeCents = row?.incomeCents ?? 0
+    const expenseCents = row?.expenseCents ?? 0
+    return { month, incomeCents, expenseCents, balanceCents: incomeCents - expenseCents }
+  })
+}
+
+export function totalsByCategory(
+  db: DB,
+  month: string,
+  kind: CategoryKind,
+): CategoryTotal[] {
+  const { start, end } = monthBounds(month)
+
+  return db
+    .prepare(
+      `SELECT t.categoryId AS categoryId,
+              coalesce(c.name, 'Uncategorised') AS categoryName,
+              coalesce(c.icon, 'circle-help')   AS categoryIcon,
+              c.color AS categoryColor,
+              sum(t.amountCents) AS totalCents
+       FROM transactions t
+       LEFT JOIN categories c ON c.id = t.categoryId
+       WHERE t.kind = @kind AND t.occurredOn >= @start AND t.occurredOn < @end
+       GROUP BY t.categoryId
+       HAVING totalCents > 0
+       ORDER BY totalCents DESC`,
+    )
+    .all({ kind, start, end }) as CategoryTotal[]
+}
+
+export function budgetStatus(db: DB, month: string): BudgetStatus[] {
+  const { start, end } = monthBounds(month)
+
+  return db
+    .prepare(
+      `SELECT b.categoryId,
+              c.name  AS categoryName,
+              c.icon  AS categoryIcon,
+              c.color AS categoryColor,
+              b.amountCents AS budgetCents,
+              coalesce((SELECT sum(t.amountCents) FROM transactions t
+                        WHERE t.categoryId = b.categoryId AND t.kind = 'expense'
+                          AND t.occurredOn >= @start AND t.occurredOn < @end), 0) AS spentCents
+       FROM budgets b
+       JOIN categories c ON c.id = b.categoryId
+       WHERE c.deletedAt IS NULL
+       ORDER BY spentCents * 1.0 / max(b.amountCents, 1) DESC, c.name`,
+    )
+    .all({ start, end }) as BudgetStatus[]
+}
+
+export function netWorthSeries(db: DB): NetWorthSnapshot[] {
+  return db
+    .prepare(
+      `SELECT capturedOn, amountCents FROM netWorthSnapshots ORDER BY capturedOn`,
+    )
+    .all() as NetWorthSnapshot[]
+}
+
+export function dashboardSummary(
+  db: DB,
+  month: string,
+  today: string,
+): DashboardSummary {
+  const { start, end } = monthBounds(month)
+
+  const totals = db
+    .prepare(
+      `SELECT
+         coalesce(sum(CASE WHEN kind = 'income'  THEN amountCents END), 0) AS incomeCents,
+         coalesce(sum(CASE WHEN kind = 'expense' THEN amountCents END), 0) AS expenseCents
+       FROM transactions
+       WHERE occurredOn >= @start AND occurredOn < @end`,
+    )
+    .get({ start, end }) as { incomeCents: number; expenseCents: number }
+
+  /*
+   * Net worth is stated as of the selected month's end — or today when that
+   * month is still running. Reporting the live figure while viewing a past
+   * month compared a present-day total against an old one and still called it
+   * "since last month".
+   */
+  const lastDayOfMonth = format(subDays(parseISO(end), 1), 'yyyy-MM-dd')
+  const asOf = lastDayOfMonth > today ? today : lastDayOfMonth
+  const previousMonthEnd = format(subDays(parseISO(start), 1), 'yyyy-MM-dd')
+
+  // Opening balances count as prior net worth, so the comparison is missing
+  // only when there is no account to compare at all.
+  const anyAccount = db
+    .prepare('SELECT 1 AS present FROM accounts WHERE deletedAt IS NULL LIMIT 1')
+    .get() as { present: number } | undefined
+
+  return {
+    netWorthCents: netWorthAsOf(db, asOf),
+    monthIncomeCents: totals.incomeCents,
+    monthExpenseCents: totals.expenseCents,
+    monthBalanceCents: totals.incomeCents - totals.expenseCents,
+    previousNetWorthCents: anyAccount ? netWorthAsOf(db, previousMonthEnd) : null,
+  }
+}
