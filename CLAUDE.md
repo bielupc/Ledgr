@@ -72,7 +72,7 @@ Three conventions worth knowing before editing:
 
 **Categories** — separate expense and income lists, each with name + icon. Also **soft delete**, for the same reason: existing transactions keep their category so historical reports stay accurate.
 
-**Budgets** — tied to expense categories. Reset monthly, **no rollover**.
+**Budgets** — tied to expense categories. Reset monthly, **no rollover**. A limit is a standing figure on the category, not a row per month, so the Budgets screen carries no month picker and no spend: the only month-scoped figure `budgetStatus` returns is `spentCents`, which is the dashboard's panel, not this screen's. Don't reintroduce a month there.
 
 **Transactions** — date, category, account, amount, and an optional **name**: the label the row is recognised by ("Mercadona", "Rent"), not a remark. Tables lead with it and fall back to the category name when it is absent. Deletion is a **hard delete** (a single transaction isn't a shared reference).
 
@@ -136,6 +136,8 @@ Hairlines are `1px rgba(255,255,255,.10–.14)`. Muted body text is Paper at 55�
 ## Chart palette
 
 `--chart-1..7` are **not** brand tints. Nine shades of emerald are unreadable as a category encoding, so the palette is emerald-anchored (slot 1 is Emerald) and then spreads across hues, generated in OKLCH and validated with the `dataviz` skill's `validate_palette.js` against both surfaces — lightness band, chroma floor, CVD adjacency, normal-vision floor, contrast. **Re-run that validator if you change them.** Assign in fixed order, never cycled; an eighth category folds into `--chart-other`, it does not get a new hue. Hues 180–225 are unusable — sRGB cannot reach the chroma floor there.
+
+`--chart-cat-1..7` is a second, **category-safe** set, and it is the one to reach for whenever the thing being encoded is arbitrary — a category, an account, a recurring rule. Red, green and blue are excluded from it on purpose: those three are direction inks (`--negative`, `--positive`, `--transfer`), so a category wearing one reads as a direction. It lives on two arcs only, warm 48–96 and violet-to-rose 296–344, alternating so no neighbour shares an arc, and it passes all five checks on both card surfaces. It knowingly fails `--pairs all`, which is legal only because every surface using it is adjacency-ordered and carries a named, iconed legend — **a scatter, bubble or map must re-validate with `--pairs all` first.** Use `--chart-1..7` only where the hue means a direction (the net worth line, the income and expense flow lines).
 
 Charts register only the ECharts pieces they use (`src/components/charts/Chart.tsx`) to keep the bundle down, and take explicit animation durations from `src/lib/charts.ts`.
 

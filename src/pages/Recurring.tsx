@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { EmptyState } from '@/components/empty/EmptyState'
-import { PanelLoading } from '@/components/charts/Panel'
+import { Panel, PanelLoading } from '@/components/charts/Panel'
+import { SharePie, type ShareSlice } from '@/components/charts/SharePie'
 import { CellMeter } from '@/components/brand/CellMeter'
 import { Money } from '@/components/brand/Money'
 import { DynamicIcon } from '@/components/brand/DynamicIcon'
@@ -18,10 +19,15 @@ import {
   useRecurringRules,
   useUpdateRecurring,
 } from '@/features/recurring/hooks'
-import { describeRecurrence, occurrenceDate } from '@shared/recurrence.ts'
+import {
+  describeRecurrence,
+  monthlyEquivalentCents,
+  occurrenceDate,
+} from '@shared/recurrence.ts'
 import { formatFullDay, todayIso } from '@/lib/format'
 import { fadeUp, stagger, transition } from '@/lib/motion'
 import { cn } from '@/lib/utils'
+import type { CategoryKind } from '@shared/schemas.ts'
 import type { RecurringRuleRow } from '@shared/types.ts'
 
 const NO_ROWS: RecurringRuleRow[] = []
@@ -54,6 +60,23 @@ function cycleFraction(rule: RecurringRuleRow, today: string): number {
   return Math.min(Math.max(elapsed / span, 0), 1)
 }
 
+/*
+ * What a set of rules actually commits per month, whatever each one's cadence:
+ * a weekly charge and a yearly one only compare once both are on the same
+ * footing. Paused rules are left out — they commit nothing until resumed.
+ */
+function monthlySlices(rules: RecurringRuleRow[], kind: CategoryKind): ShareSlice[] {
+  return rules
+    .filter((rule) => rule.isActive && rule.kind === kind)
+    .map((rule) => ({
+      id: rule.id,
+      name: rule.name ?? rule.categoryName ?? (kind === 'income' ? 'Income' : 'Expense'),
+      icon: rule.categoryIcon ?? rule.accountIcon,
+      valueCents: monthlyEquivalentCents(rule),
+    }))
+    .sort((a, b) => b.valueCents - a.valueCents || a.name.localeCompare(b.name))
+}
+
 export default function Recurring() {
   const rules = useRecurringRules()
   const update = useUpdateRecurring()
@@ -66,6 +89,8 @@ export default function Recurring() {
   const all = rules.data ?? NO_ROWS
   const active = all.filter((rule) => rule.isActive)
   const paused = all.filter((rule) => !rule.isActive)
+  const expenseSlices = monthlySlices(all, 'expense')
+  const incomeSlices = monthlySlices(all, 'income')
 
   const open = (rule?: RecurringRuleRow) => {
     setEditing(rule)
@@ -80,6 +105,24 @@ export default function Recurring() {
           New series
         </Button>
       </PageHeader>
+
+      {/* What repeats, as proportions, before the list of individual rules.
+          Two rings rather than one: money in and money out do not share a
+          total, so a single ring would invent a denominator. */}
+      {(expenseSlices.length > 0 || incomeSlices.length > 0) && (
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          {expenseSlices.length > 0 && (
+            <Panel title="Recurring expenses" bodyClassName="p-0">
+              <SharePie slices={expenseSlices} caption="Per month" height={210} />
+            </Panel>
+          )}
+          {incomeSlices.length > 0 && (
+            <Panel title="Recurring income" bodyClassName="p-0">
+              <SharePie slices={incomeSlices} caption="Per month" height={210} />
+            </Panel>
+          )}
+        </div>
+      )}
 
       <motion.section
         variants={fadeUp}
@@ -201,9 +244,11 @@ function RuleRow({
             {rule.name ?? rule.categoryName ?? (income ? 'Income' : 'Expense')}
           </span>
         </span>
-        <span className="truncate text-[11.5px] text-subtle-foreground">
-          {describeRecurrence(rule)} · {rule.accountName}
-          {rule.categoryName ? ` · ${rule.categoryName}` : ''}
+        {/* The cadence alone. The account is not what this screen is read for,
+            and the category is already the row's own name whenever the rule
+            has none of its own. */}
+        <span className="truncate text-[12px] text-muted-foreground">
+          {describeRecurrence(rule)}
         </span>
       </span>
 
@@ -211,7 +256,11 @@ function RuleRow({
           language, and it turns a column of dates into something with shape. */}
       {active && (
         <span className="hidden shrink-0 items-center gap-3 md:flex">
-          <CellMeter fraction={cycleFraction(rule, today)} cells={12} />
+          <CellMeter
+            fraction={cycleFraction(rule, today)}
+            cells={12}
+            tone={income ? 'emerald' : 'negative'}
+          />
           <span
             className={cn(
               'w-[86px] text-right text-[12px]',
@@ -226,7 +275,7 @@ function RuleRow({
       <span className="flex w-[124px] shrink-0 flex-col items-end gap-0.5">
         <Money
           cents={rule.amountCents}
-          tone={income ? 'positive' : 'inherit'}
+          tone={income ? 'positive' : 'negative'}
           className="text-[13.5px]"
         />
         <span className="tabular text-[11px] text-subtle-foreground">

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { describeRecurrence, dueOccurrences, occurrenceDate } from '../shared/recurrence.ts'
+import {
+  describeRecurrence,
+  dueOccurrences,
+  monthlyEquivalentCents,
+  occurrenceDate,
+} from '../shared/recurrence.ts'
 
 describe('occurrenceDate', () => {
   it('returns the start date at index 0', () => {
@@ -110,5 +115,40 @@ describe('describeRecurrence', () => {
   it('describes the anchor day even where a month is short of it', () => {
     expect(describeRecurrence({ startDate: '2026-01-31', frequency: 'monthly', intervalCount: 1 }))
       .toBe('Monthly on the 31st')
+  })
+})
+
+/*
+ * Rules only compare once they are on the same footing, and the conversion has
+ * to use the mean calendar month: a weekly charge is not four monthly ones.
+ */
+describe('monthlyEquivalentCents', () => {
+  const at = (frequency: 'daily' | 'weekly' | 'monthly' | 'yearly', amountCents: number, intervalCount = 1) =>
+    monthlyEquivalentCents({ amountCents, frequency, intervalCount })
+
+  it('passes a monthly rule through untouched', () => {
+    expect(at('monthly', 45000)).toBe(45000)
+  })
+
+  it('spreads a yearly rule across twelve months', () => {
+    expect(at('yearly', 12000)).toBe(1000)
+  })
+
+  it('uses the mean month, so a weekly rule is more than four payments', () => {
+    // 365.25 / 7 / 12 = 4.348 weeks, not 4.
+    expect(at('weekly', 10000)).toBe(43482)
+    expect(at('daily', 100)).toBe(3044)
+  })
+
+  it('divides by the interval, so every-other-week is half of weekly', () => {
+    expect(at('weekly', 10000, 2)).toBe(21741)
+    expect(at('monthly', 45000, 3)).toBe(15000)
+    expect(at('yearly', 12000, 2)).toBe(500)
+  })
+
+  /* A rule that arrives with a zero interval must not divide by zero and blow
+   * the whole ring's total into NaN. */
+  it('treats a zero interval as one rather than dividing by it', () => {
+    expect(at('monthly', 45000, 0)).toBe(45000)
   })
 })

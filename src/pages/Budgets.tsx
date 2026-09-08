@@ -1,11 +1,10 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { motion } from 'motion/react'
 import { Plus, Target, X } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { EmptyState } from '@/components/empty/EmptyState'
 import { PanelLoading } from '@/components/charts/Panel'
-import { CellMeter } from '@/components/brand/CellMeter'
-import { Money } from '@/components/brand/Money'
+import { SharePie, type ShareSlice } from '@/components/charts/SharePie'
 import { DynamicIcon } from '@/components/brand/DynamicIcon'
 import { RowAction } from '@/components/table/RowActions'
 import { useCategories } from '@/features/categories/hooks'
@@ -38,25 +37,28 @@ export default function Budgets() {
   const { openCategory } = useQuickActions()
 
   const all = categories.data ?? NO_CATEGORIES
-  const byCategory = new Map(
-    (limits.data ?? NO_LIMITS).map((row) => [row.categoryId, row.budgetCents]),
-  )
+  const limitRows = limits.data ?? NO_LIMITS
 
   /* Two populations, not one list with holes: a category with a limit is a
      figure to read and adjust, one without is a candidate to pick. Ranked by
-     the limit itself, which is the only ordering the page's own data supports
-     now that spend has left it. */
-  const budgeted = all
-    .filter((category) => byCategory.has(category.id))
-    .map((category) => ({ category, budgetCents: byCategory.get(category.id)! }))
-    .sort(
-      (a, b) =>
-        b.budgetCents - a.budgetCents || a.category.name.localeCompare(b.category.name),
-    )
-  const unbudgeted = all.filter((category) => !byCategory.has(category.id))
+     the limit, so the ring reads from its largest slice around. */
+  const budgeted = useMemo<ShareSlice[]>(() => {
+    const byCategory = new Map(limitRows.map((row) => [row.categoryId, row.budgetCents]))
+    return all
+      .filter((category) => byCategory.has(category.id))
+      .map((category) => ({
+        id: category.id,
+        name: category.name,
+        icon: category.icon,
+        valueCents: byCategory.get(category.id)!,
+      }))
+      .sort((a, b) => b.valueCents - a.valueCents || a.name.localeCompare(b.name))
+  }, [all, limitRows])
 
-  const totalCents = budgeted.reduce((sum, row) => sum + row.budgetCents, 0)
-  const largestCents = budgeted[0]?.budgetCents ?? 0
+  const unbudgeted = useMemo(() => {
+    const budgetedIds = new Set(limitRows.map((row) => row.categoryId))
+    return all.filter((category) => !budgetedIds.has(category.id))
+  }, [all, limitRows])
 
   return (
     <motion.div variants={stagger()} initial="hidden" animate="visible" className="flex flex-col gap-5">
@@ -95,45 +97,26 @@ export default function Budgets() {
               transition={transition}
               className="flex flex-col overflow-hidden rounded-xl border border-border bg-card"
             >
-              {/* The one aggregate a set of standing limits has: what they
-                  commit per month. It sits on the panel rather than in the page
-                  header, where the shell's dither field runs behind the right
-                  edge and bare text has no ground to hold onto. */}
-              <header className="flex items-baseline justify-between gap-3 border-b border-border px-3.5 py-2.5">
-                <span className="text-[12px] text-subtle-foreground">
-                  {budgeted.length} {budgeted.length === 1 ? 'category' : 'categories'}
-                </span>
-                <span className="flex items-baseline gap-2.5">
-                  <span className="label-mono">Per month</span>
-                  <Money cents={totalCents} className="display-tight text-[17px]" />
-                </span>
-              </header>
-
-              <ul className="flex flex-col p-1.5">
-                {budgeted.map(({ category, budgetCents }, index) => (
-                  <LimitRow
-                    key={category.id}
-                    category={category}
-                    budgetCents={budgetCents}
-                    share={largestCents > 0 ? budgetCents / largestCents : 0}
-                    index={index}
+              <SharePie
+                slices={budgeted}
+                caption="Per month"
+                renderTrailing={(slice) => (
+                  <LimitField
+                    slice={slice}
                     onSet={(amountCents) =>
-                      setBudget.mutate({ categoryId: category.id, amountCents })
+                      setBudget.mutate({ categoryId: slice.id, amountCents })
                     }
-                    onClear={() => clearBudget.mutate(category.id)}
+                    onClear={() => clearBudget.mutate(slice.id)}
                   />
-                ))}
-              </ul>
+                )}
+              />
             </motion.section>
           )}
 
           {unbudgeted.length > 0 && (
             <motion.section variants={fadeUp} transition={transition} className="flex flex-col gap-3">
-              <header className="flex items-center gap-3 border-b border-border pb-2">
+              <header className="flex items-center border-b border-border pb-2">
                 <h2 className="heading-tight text-[15px]">No limit set</h2>
-                <span className="tabular text-[12px] text-subtle-foreground">
-                  {unbudgeted.length}
-                </span>
               </header>
 
               <ul className="flex flex-wrap gap-2">
@@ -156,21 +139,22 @@ export default function Budgets() {
   )
 }
 
-function LimitRow({
-  category,
-  budgetCents,
-  share,
-  index,
+/*
+ * The figure is the field. It carries no chrome until the row is hovered or it
+ * takes focus, so the column reads as a column of amounts rather than a stack
+ * of form controls.
+ */
+function LimitField({
+  slice,
   onSet,
   onClear,
 }: {
-  category: Category
-  budgetCents: number
-  share: number
-  index: number
+  slice: ShareSlice
   onSet: (amountCents: number) => void
   onClear: () => void
 }) {
+  const budgetCents = slice.valueCents
+
   /*
    * The field holds a draft while it is being typed into, and takes the
    * server's figure back whenever that changes underneath it. Adjusted during
@@ -201,34 +185,12 @@ function LimitRow({
   }
 
   return (
-    <li className="group flex items-center gap-3 rounded-lg px-2.5 py-2 transition-colors duration-150 ease-[var(--ease-out-brand)] hoverfine:bg-muted/60">
-      <span className="grid size-8 shrink-0 place-items-center rounded-lg border border-border bg-surface transition-[border-color,scale] duration-150 ease-[var(--ease-out-brand)] group-hoverfine:scale-105 group-hoverfine:border-emerald/50">
-        <DynamicIcon
-          name={category.icon}
-          className="size-4 text-muted-foreground transition-colors duration-150 group-hoverfine:text-accent-ink"
-        />
-      </span>
-
-      <span className="min-w-0 flex-1 truncate text-[13.5px]">{category.name}</span>
-
-      {/* Ranks the limits against the largest one before a figure is read.
-          Neutral, because a limit on its own has no state to report. */}
-      <CellMeter
-        fraction={share}
-        cells={14}
-        tone="neutral"
-        delayMs={index * 40}
-        className="hidden md:inline-flex"
-      />
-
-      {/* The figure is the field. It carries no chrome until the row is hovered
-          or it takes focus, so the column reads as a column of amounts rather
-          than a stack of form controls. */}
-      <span className="relative w-[124px] shrink-0">
+    <>
+      <span className="relative w-[112px] shrink-0">
         <input
           value={draft}
           inputMode="decimal"
-          aria-label={`Monthly limit for ${category.name}`}
+          aria-label={`Monthly limit for ${slice.name}`}
           onChange={(event) => setDraft(event.target.value)}
           onBlur={commit}
           onKeyDown={(event) => {
@@ -251,12 +213,12 @@ function LimitRow({
       <span className="flex w-7 shrink-0 justify-end">
         <RowAction
           icon={X}
-          label={`Remove the limit on ${category.name}`}
+          label={`Remove the limit on ${slice.name}`}
           tone="destructive"
           onClick={onClear}
         />
       </span>
-    </li>
+    </>
   )
 }
 

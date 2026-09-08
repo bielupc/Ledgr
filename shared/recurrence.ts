@@ -100,3 +100,31 @@ export function describeRecurrence(rule: {
     }
   }
 }
+
+/*
+ * A month's worth of a rule, whatever its cadence. Comparing a weekly charge
+ * with a yearly one needs both on the same footing, so cadences are converted
+ * with the mean calendar month (365.25 / 12 days) rather than 30, which would
+ * quietly understate every daily and weekly rule by about 1.5%.
+ */
+const DAYS_PER_MONTH = 365.25 / 12
+const WEEKS_PER_MONTH = DAYS_PER_MONTH / 7
+
+export function monthlyEquivalentCents(rule: {
+  amountCents: number
+  frequency: Frequency
+  intervalCount: number
+}): number {
+  const per = Math.max(rule.intervalCount, 1)
+
+  switch (rule.frequency) {
+    case 'daily':
+      return Math.round((rule.amountCents * DAYS_PER_MONTH) / per)
+    case 'weekly':
+      return Math.round((rule.amountCents * WEEKS_PER_MONTH) / per)
+    case 'monthly':
+      return Math.round(rule.amountCents / per)
+    case 'yearly':
+      return Math.round(rule.amountCents / (12 * per))
+  }
+}

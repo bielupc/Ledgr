@@ -22,15 +22,22 @@ const NO_ROWS: AccountBalance[] = []
  * place in the list, so the colour that marks it in the net-worth block marks
  * it here too. Held to a ring and a tint rather than a fill — seven saturated
  * cards would overrun the brand's 78/18/4 proportion on their own.
+ *
+ * `--chart-cat-*`, not `--chart-*`. An account is an arbitrary thing being
+ * told apart from other arbitrary things, which is what the category-safe arcs
+ * are for; `--chart-*` spends green, red and blue on income, expense and net
+ * worth, and an account wearing one reads as a direction. It is also the set
+ * `AccountsPanel` encodes with, so the two screens now genuinely agree — the
+ * claim above was false while this list pointed at the other palette.
  */
 const TONES = [
-  'var(--chart-1)',
-  'var(--chart-2)',
-  'var(--chart-3)',
-  'var(--chart-4)',
-  'var(--chart-5)',
-  'var(--chart-6)',
-  'var(--chart-7)',
+  'var(--chart-cat-1)',
+  'var(--chart-cat-2)',
+  'var(--chart-cat-3)',
+  'var(--chart-cat-4)',
+  'var(--chart-cat-5)',
+  'var(--chart-cat-6)',
+  'var(--chart-cat-7)',
 ]
 
 export default function Accounts() {

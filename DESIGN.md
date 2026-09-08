@@ -74,6 +74,22 @@ band, chroma floor, CVD adjacency, normal-vision floor, contrast. **Re-run the v
 any change.** Assign in fixed order, never cycled; an eighth category folds into
 `--chart-other`. Hues 180–225 are unusable, sRGB cannot reach the chroma floor there.
 
+`--chart-cat-1..7` is a second, **category-safe** set, and it is the one every arbitrary-thing
+encoding uses: the expense and income donuts, the budget ring, the recurring rings, the
+balances share grid and the Accounts cards. Red, green and blue are excluded from it outright,
+because all three are already direction inks (`--negative`, `--positive`, `--transfer`) and a
+category wearing one reads as a direction it does not have. That leaves two arcs, warm 48–96
+and violet-to-rose 296–344, and the slots alternate between them so no neighbour shares an
+arc. Generated in OKLCH at 92% of the sRGB gamut edge and validated against each theme's card
+surface: all five checks pass, worst adjacent pair ΔE 15.6 light / 15.7 dark against a target
+of 8.
+
+**Known and accepted:** `--pairs all` fails on this set — seven hues inside two arcs cannot all
+be told apart pairwise. It is legal here because every surface spending these hues is
+adjacency-ordered and carries a named, iconed legend, so colour never carries identity alone.
+A scatter, bubble or map would break that assumption and must re-run the validator with
+`--pairs all` before using them.
+
 Tokens reach ECharts already resolved to `rgb()` (see `useResolvedTokens`), because zrender
 parses colours to interpolate them and a `color-mix()` string parses to undefined.
 
@@ -129,6 +145,15 @@ Brand primitives:
 - `<EmptyState>` — icon or outline mark, headline, one line of copy, CTA, over a masked
   dither field. Every chart, table and panel has one; a bare "no data" is not acceptable.
 - `<Panel>` — title, optional right-hand figure, body. The single card vocabulary.
+- `<SharePie>` — a donut paired with its own legend, where the legend rows are the real
+  content and the ring is the proportion read. One component because three surfaces need the
+  pairing and the fold-at-seven and slot-colour rules must not drift between them: past seven
+  slices the ring's tail folds into one `--chart-other` wedge while the list stays whole, so
+  every row remains addressable even when it has no hue of its own. Hovering a slice writes
+  it into the ring's hole and dims the other rows, so there is no tooltip occluding the figure
+  it duplicates. The legend row's icon tile wears the slice's hue, which makes the swatch and
+  the thing's own mark one object; `renderTrailing` swaps the amount cell for controls, which
+  is how Budgets puts an editable limit on the same row.
 - `<ShareGrid>` — part-to-whole across accounts as 100 brand cells (25 x 4), so one cell is
   one percent and a row's figure is its own cell count rather than a second rounding that can
   disagree by a point. Allocation is largest-remainder (`src/lib/allocate.ts`): any non-zero
@@ -180,14 +205,27 @@ actually has:
   count). Name, icon and balance, and nothing else: row form was wrong once net worth and the
   share column came out, because four rows carrying one figure each is a list pretending to be
   a table, and a card carries one figure without looking underfed.
-- **Categories** — wrapping tiles on the page ground, no card. A category is two or three
-  words, so a full-width row spends nine tenths of its line on nothing, and two card columns
-  leave the shorter list standing in its own empty half. The tile is the edit affordance and
-  archive sits beside it, never inside: a button within a button is invalid markup.
+- **Categories** — the Accounts card, reused rather than re-invented, in two kind-labelled
+  grids. Icon tile, name, and edit and archive beside each other; the card is not itself a
+  button, which also keeps a button out of a button. Tracks are `auto-fill`, not `auto-fit`:
+  the two sections share one definition and `auto-fit` collapses the empty tracks, stretching
+  three income cards to twice the width of ten expense ones. The kind is marked once, on the
+  section header, with the same two direction arrows the entry dialog switches on.
+- **Budgets** — a `<SharePie>`: the ring answers "of everything I have committed, how much
+  goes where", and its rows are both the legend and the controls. No month anywhere on the
+  screen, because a limit is a standing figure on the category and not a row per month; the
+  only monthly thing was the spend, which belongs to the dashboard. Budgeted and unbudgeted
+  are two populations, not one list with holes — the ones without a limit sit below as chips
+  that open into an amount in place.
 - **Recurring** — stays a list, because the question is *what posts next* and that is read by
   scanning a sorted column. It earns the row with a `<CellMeter>` of the current interval and
   a relative countdown; the previous occurrence is measured from the anchor exactly as
-  postings are, so the meter and the schedule can never describe different cycles.
+  postings are, so the meter and the schedule can never describe different cycles. Above it,
+  two `<SharePie>`s answer the other question — what repeats, and in what proportion. Two
+  rings and not one, because money in and money out do not share a total and a single ring
+  would invent a denominator. Cadences are normalised through
+  `monthlyEquivalentCents`, on the mean calendar month, so a weekly charge and a yearly one
+  compare; paused rules are excluded, since they commit nothing until resumed.
 - **Transactions** — a real table, because the rows are homogeneous and comparable field by
   field. This is the one place the row form is right. No totals row: the figure a month adds
   up to is the dashboard's job, and a sum under a filtered table invites reading it as the
@@ -205,10 +243,16 @@ Durations and easings live in `src/lib/motion.ts` and mirror CSS custom properti
 - Durations: instant 120ms, fast 180ms, base 260ms, slow 420ms. Springs
   (`stiffness: 420, damping: 34`) only where something physically moves, e.g. the shared
   `layoutId` nav pill.
-- The modal veil blurs the ground (`backdrop-filter: blur(10px)`), ramping from 0 in the
-  keyframe: at 50% black alone the dashboard behind stays legible and competes with the panel.
+- The modal veil blurs the ground (`backdrop-filter: blur(10px)`): at 50% black alone the
+  dashboard behind stays legible and competes with the panel. The blur is **deferred until
+  after the dialog has finished scaling** (`ledgr-veil-blur`, 140ms delayed 180ms, fill
+  `both`). A full-viewport `backdrop-filter` is re-rasterised on every frame that anything
+  above it moves, which lands squarely on the one animation the user waits through: measured
+  across the 220ms open, 6 of ~9 frames ran past 20ms with the blur present against 0 once it
+  waits, worst frame 28ms down to 18ms. The keyframe deliberately has no `from`, so the
+  reduced-motion rule opts out by declaring the blur statically instead.
 - Overlays are keyframes, not transitions, because Radix waits on `animationend`:
-  `.anim-veil` / `.anim-modal` / `.anim-pop`. Enter and exit are asymmetric (modal 220 /
+  `.anim-veil` / `.anim-modal` / `.anim-pop`. Enter and exit are asymmetric (modal 170 /
   140ms, popover 150 / 110ms). Popovers scale from their trigger; modals stay centred.
 - Press feedback is `active:scale-[0.97]` on buttons, `0.98` on rows. Tailwind v4 emits the
   `scale` property, so transitions must name `scale`, not `transform`.

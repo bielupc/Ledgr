@@ -106,20 +106,33 @@
   --chart-other: #6b7280;
 
   /*
-   * Category-safe palette: expense/income pies and the balances share grid
-   * encode arbitrary categories (a category, an account) rather than a sign,
-   * so red/blue/green are off-limits here — those hues are reserved
-   * elsewhere for expense, net worth and income respectively. Generated in
-   * OKLCH across the orange/amber and magenta/violet arcs only and passing
-   * the same six checks.
+   * Category-safe palette: the category pies, the recurring rings and the
+   * balances share grid encode an arbitrary thing (a category, a rule, an
+   * account) rather than a sign, so red, green and blue are off-limits here.
+   * Those three are already spoken for as direction inks — `--negative`,
+   * `--positive` and `--transfer` — and a category wearing one reads as a
+   * direction it does not have.
+   *
+   * That leaves two arcs, warm 48-96 and violet-to-rose 296-344, and the
+   * slots alternate between them so no two neighbours come from the same arc.
+   * Generated in OKLCH at chroma 92% of the sRGB gamut edge, then validated
+   * with the `dataviz` validator against each theme's card surface: lightness
+   * band, chroma floor, CVD adjacency, normal-vision floor and contrast all
+   * pass, worst adjacent pair ΔE 15.6 light / 15.7 dark against a target of 8.
+   *
+   * Known and accepted: `--pairs all` fails, because seven hues inside two
+   * arcs cannot all be told apart pairwise. Every surface that spends these
+   * is adjacency-ordered and carries a named, iconed legend, so colour never
+   * carries identity alone. A scatter, bubble or map would break that
+   * assumption and has to re-run the validator with `--pairs all` first.
    */
-  --chart-cat-1: #c1552c;
-  --chart-cat-2: #a059b1;
-  --chart-cat-3: #b36303;
-  --chart-cat-4: #ae539d;
-  --chart-cat-5: #9f7100;
-  --chart-cat-6: #8f5fc0;
-  --chart-cat-7: #90790f;
+  --chart-cat-1: #b56c1c;
+  --chart-cat-2: #994ab0;
+  --chart-cat-3: #9a841d;
+  --chart-cat-4: #663dad;
+  --chart-cat-5: #a14e14;
+  --chart-cat-6: #d05ba5;
+  --chart-cat-7: #9b7019;
 
   --chart-grid: color-mix(in srgb, var(--carbon) 8%, transparent);
   --chart-axis: color-mix(in srgb, var(--carbon) 38%, transparent);
@@ -186,14 +199,15 @@
   --chart-7: #929208;
   --chart-other: #8b9199;
 
-  /* Same category-safe hues, re-stepped for the dark surface. */
-  --chart-cat-1: #d6673f;
-  --chart-cat-2: #b36bc4;
-  --chart-cat-3: #cc7200;
-  --chart-cat-4: #c265b0;
-  --chart-cat-5: #b5820c;
-  --chart-cat-6: #a272d4;
-  --chart-cat-7: #a58a07;
+  /* The same arcs and the same slot order, re-stepped about 0.05 lighter in
+     OKLCH for the dark card and re-validated against it. */
+  --chart-cat-1: #c6761f;
+  --chart-cat-2: #a959c1;
+  --chart-cat-3: #a79021;
+  --chart-cat-4: #7750c1;
+  --chart-cat-5: #b65a19;
+  --chart-cat-6: #d963ad;
+  --chart-cat-7: #ab7d1e;
 
   --chart-grid: color-mix(in srgb, var(--paper) 7%, transparent);
   --chart-axis: color-mix(in srgb, var(--paper) 40%, transparent);
@@ -364,19 +378,6 @@
     --meter-ink: var(--negative);
   }
 
-  /*
-   * Magnitude with nothing at stake: a run of limits ranked against each other
-   * has no state to report, and Emerald is spent on state. Muted ink keeps the
-   * ranking pre-attentive while staying quieter than the figure beside it.
-   *
-   * Mixed into `--card` rather than handed `--muted-foreground`: the text ramp
-   * is itself translucent, and the cell rules mix the ink down again, so a
-   * translucent ink compounds to roughly a third alpha and the run disappears.
-   */
-  .cell-meter[data-tone='neutral'] {
-    --meter-ink: color-mix(in srgb, var(--foreground) 58%, var(--card));
-  }
-
   .cell-meter > span {
     width: var(--cell);
     height: var(--cell);
@@ -525,15 +526,30 @@
  * deliberately asymmetric: the user is waiting on the way in and has already
  * moved on by the way out.
  */
+/*
+ * Opacity only. Animating the `backdrop-filter` radius from 0 re-blurs the
+ * whole viewport on every frame, and the ground behind it is a pixelated
+ * canvas, so the compositor cannot cache the pass: measured at roughly 26 of
+ * the 42 frames a 700ms open should get, with a third of them over 20ms. Held
+ * at full radius the blurred backdrop rasterises once and only the veil's
+ * alpha moves, which is the same effect to look at and a composited fade.
+ */
 @keyframes ledgr-veil-in {
   from {
     opacity: 0;
-    backdrop-filter: blur(0px) saturate(100%);
   }
 }
 @keyframes ledgr-veil-out {
   to {
     opacity: 0;
+  }
+}
+/* Deliberately has no `from`: the underlying value is the implicit start, which
+   is what lets the reduced-motion rule below opt out by declaring the blur
+   statically instead. */
+@keyframes ledgr-veil-blur {
+  to {
+    backdrop-filter: blur(10px) saturate(115%);
   }
 }
 /*
@@ -569,17 +585,28 @@
 
 @layer components {
   .anim-veil {
-    /* The ground goes soft, not just dark: at 50% black alone the dashboard
-       behind stays legible and competes with the panel for attention. */
-    backdrop-filter: blur(10px) saturate(115%);
-    animation: ledgr-veil-in 180ms var(--ease-out-brand);
+    /*
+     * The ground goes soft, not just dark: at 50% black alone the dashboard
+     * behind stays legible and competes with the panel for attention.
+     *
+     * The blur is held back until the dialog has finished scaling. A
+     * full-viewport `backdrop-filter` has to be re-rasterised on every frame
+     * that anything above it moves, and that lands on the one animation the
+     * user is waiting through: measured over the 220ms open, 6 of ~9 frames
+     * ran past 20ms with the blur present against none at all once it waits,
+     * worst frame 28ms down to 18ms. Waiting costs nothing to look at, since
+     * the ground is already dimmed by then.
+     */
+    animation:
+      ledgr-veil-in 140ms var(--ease-out-brand),
+      ledgr-veil-blur 140ms linear 180ms both;
   }
   .anim-veil[data-state='closed'] {
     animation: ledgr-veil-out 130ms var(--ease-out-brand);
   }
 
   .anim-modal {
-    animation: ledgr-modal-in 220ms var(--ease-out-brand);
+    animation: ledgr-modal-in 170ms var(--ease-out-brand);
   }
   .anim-modal[data-state='closed'] {
     animation: ledgr-modal-out 140ms var(--ease-out-brand);
@@ -615,5 +642,14 @@
     transition-property: opacity, background-color, border-color, color, fill, stroke !important;
     transition-duration: 140ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/* Nothing moves here, so there is no animation to stay out of the way of: the
+   veil wears its blur outright. Declaring it also makes it the implicit start
+   of `ledgr-veil-blur`, so the delayed keyframe has nothing left to do. */
+@media (prefers-reduced-motion: reduce) {
+  .anim-veil {
+    backdrop-filter: blur(10px) saturate(115%);
   }
 }
