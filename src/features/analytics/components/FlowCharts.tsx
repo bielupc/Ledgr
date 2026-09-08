@@ -134,8 +134,10 @@ export function FlowChart({ month, kind }: { month: string; kind: 'income' | 'ex
   )
 }
 
-/** Balance is income − expense, coloured by sign so a deficit month reads
- *  immediately. */
+/** Balance is income − expense. Sign reads from which side of the axis a bar
+ *  falls, not from colour — green/red are reserved for income/expense
+ *  elsewhere, so the bar itself just takes the theme's ink (white on dark,
+ *  black on light). */
 export function BalanceChart({ month }: { month: string }) {
   const totals = useMonthlyTotals(month, MONTHS)
   const data = useMemo(() => totals.data ?? [], [totals.data])
@@ -157,9 +159,8 @@ export function BalanceChart({ month }: { month: string }) {
           const index = list[0]?.dataIndex ?? 0
           const row = data[index]
           if (!row) return ''
-          const color = row.balanceCents >= 0 ? tokens['--positive'] : tokens['--negative']
           return `<div style="font-size:11px;opacity:.7">${formatMonthLabel(row.month)}</div>
-            ${tooltipRow(dot(color!), 'Balance', row.balanceCents)}`
+            ${tooltipRow(dot(tokens['--foreground']!), 'Balance', row.balanceCents)}`
         },
       },
       series: [
@@ -168,7 +169,7 @@ export function BalanceChart({ month }: { month: string }) {
           data: data.map((d) => ({
             value: d.balanceCents,
             itemStyle: {
-              color: d.balanceCents >= 0 ? tokens['--chart-1'] : tokens['--chart-5'],
+              color: tokens['--foreground'],
               borderRadius: d.balanceCents >= 0 ? [4, 4, 0, 0] : [0, 0, 4, 4],
             },
             // A deficit bar hangs below the axis, so its figure has to sit under

@@ -4,7 +4,8 @@ interface CellMeterProps {
   /** 0–1. Clamped; anything above 1 is the caller's cue to pass tone="negative". */
   fraction: number
   cells?: number
-  tone?: 'emerald' | 'negative'
+  /** `neutral` is magnitude with no state attached, so it spends no Emerald. */
+  tone?: 'emerald' | 'negative' | 'neutral'
   /** Delays the whole run so a list of meters lands in sequence. */
   delayMs?: number
   className?: string

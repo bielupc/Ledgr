@@ -21,5 +21,6 @@ export const ledgerScopes = [
   ['transactions'],
   ['transfers'],
   ['budgets'],
+  ['recurring'],
   ['analytics'],
 ] as const

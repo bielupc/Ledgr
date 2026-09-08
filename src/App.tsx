@@ -1,20 +1,22 @@
+import { lazy } from 'react'
 import { Route, Routes } from 'react-router'
-import {
-  ArrowLeftRight,
-  ChartPie,
-  Flag,
-  Plug,
-  Repeat,
-  Sparkles,
-  Tags,
-  Target,
-  TrendingUp,
-  Wallet,
-} from 'lucide-react'
+import { ChartPie, Flag, Plug, Sparkles, TrendingUp } from 'lucide-react'
 import { AppShell } from '@/components/layout/AppShell'
 import { QuickActionsProvider } from '@/features/quick-actions/QuickActions'
-import Dashboard from '@/pages/Dashboard'
 import { Placeholder } from '@/pages/Placeholder'
+
+/*
+ * Split per route. The dashboard alone pulls in ECharts, and the tables pull in
+ * TanStack Table; loading both up front makes the first paint wait on code the
+ * screen in front of you does not use. `AppShell` holds the suspense boundary,
+ * so the sidebar and ground are painted while a page arrives.
+ */
+const Dashboard = lazy(() => import('@/pages/Dashboard'))
+const Transactions = lazy(() => import('@/pages/Transactions'))
+const Accounts = lazy(() => import('@/pages/Accounts'))
+const Categories = lazy(() => import('@/pages/Categories'))
+const Budgets = lazy(() => import('@/pages/Budgets'))
+const Recurring = lazy(() => import('@/pages/Recurring'))
 
 export default function App() {
   return (
@@ -22,46 +24,10 @@ export default function App() {
       <Routes>
         <Route element={<AppShell />}>
           <Route index element={<Dashboard />} />
-          <Route
-            path="transactions"
-            element={
-              <Placeholder
-                icon={ArrowLeftRight}
-                title="Transaction tables are next"
-                description="Filterable tables for the month's expenses, income and transfers. Use ⌘K to add entries in the meantime."
-              />
-            }
-          />
-          <Route
-            path="accounts"
-            element={
-              <Placeholder
-                icon={Wallet}
-                title="Account management is next"
-                description="Rename, re-icon and archive accounts here. Balances already appear on the dashboard."
-              />
-            }
-          />
-          <Route
-            path="categories"
-            element={
-              <Placeholder
-                icon={Tags}
-                title="Category management is next"
-                description="Separate expense and income lists, each editable and archivable without disturbing history."
-              />
-            }
-          />
-          <Route
-            path="budgets"
-            element={
-              <Placeholder
-                icon={Target}
-                title="Budget editing is next"
-                description="Set a monthly limit per expense category. Current-month progress already shows on the dashboard."
-              />
-            }
-          />
+          <Route path="transactions" element={<Transactions />} />
+          <Route path="accounts" element={<Accounts />} />
+          <Route path="categories" element={<Categories />} />
+          <Route path="budgets" element={<Budgets />} />
           <Route
             path="goals"
             element={
@@ -72,16 +38,7 @@ export default function App() {
               />
             }
           />
-          <Route
-            path="recurring"
-            element={
-              <Placeholder
-                icon={Repeat}
-                title="Recurring series are next"
-                description="Salary, rent and subscriptions post themselves on schedule. The engine already runs — this is the screen to manage it."
-              />
-            }
-          />
+          <Route path="recurring" element={<Recurring />} />
           <Route
             path="investments"
             element={

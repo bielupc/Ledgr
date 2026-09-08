@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
+import { createApi } from '../server/api.ts'
 import { newId, openDatabase, type DB } from '../server/db.ts'
 import {
   backfillNetWorthSnapshots,
@@ -225,6 +226,82 @@ describe('recurring postings', () => {
     expect(
       (db.prepare('SELECT count(*) AS n FROM transactions').get() as { n: number }).n,
     ).toBe(3)
+  })
+})
+
+/*
+ * Editing a series affects future occurrences only. The rule is enforced in the
+ * PATCH route rather than in a helper, so the test drives the route.
+ */
+describe('editing a recurring series', () => {
+  function patch(id: string, body: Record<string, unknown>) {
+    return createApi(db).request(`/recurring/${id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+  }
+
+  function addRule(startDate: string) {
+    const id = newId()
+    db.prepare(
+      `INSERT INTO recurringRules
+         (id, kind, amountCents, accountId, categoryId, frequency, intervalCount,
+          startDate, endDate, occurrenceIndex, nextRunOn, isActive)
+       VALUES (?, 'income', 120000, ?, ?, 'monthly', 1, ?, NULL, 0, ?, 1)`,
+    ).run(id, current, salary, startDate, startDate)
+    return id
+  }
+
+  it('leaves posted transactions alone and resumes at the first unposted date', async () => {
+    const id = addRule('2026-01-10')
+    postDueRecurring(db, '2026-03-15')
+
+    const before = db
+      .prepare('SELECT occurredOn, amountCents FROM transactions ORDER BY occurredOn')
+      .all()
+    expect(before).toHaveLength(3)
+
+    const response = await patch(id, { amountCents: 200_000, frequency: 'weekly' })
+    expect(response.status).toBe(200)
+
+    // Everything already posted keeps its old date and its old amount.
+    expect(
+      db.prepare('SELECT occurredOn, amountCents FROM transactions ORDER BY occurredOn').all(),
+    ).toEqual(before)
+
+    // The next run is the first weekly step past what has posted, not the
+    // start date and not the old monthly cadence.
+    const rule = db.prepare('SELECT nextRunOn, occurrenceIndex FROM recurringRules WHERE id = ?')
+      .get(id) as { nextRunOn: string; occurrenceIndex: number }
+    expect(rule.nextRunOn).toBe('2026-03-14')
+    expect(rule.occurrenceIndex).toBe(9)
+  })
+
+  it('posts the new amount from the next occurrence on', async () => {
+    const id = addRule('2026-01-10')
+    postDueRecurring(db, '2026-02-15')
+    await patch(id, { amountCents: 200_000 })
+    postDueRecurring(db, '2026-04-15')
+
+    expect(
+      db.prepare('SELECT amountCents FROM transactions ORDER BY occurredOn').all(),
+    ).toEqual([
+      { amountCents: 120_000 },
+      { amountCents: 120_000 },
+      { amountCents: 200_000 },
+      { amountCents: 200_000 },
+    ])
+  })
+
+  it('does not reschedule when only the amount changes', async () => {
+    const id = addRule('2026-01-10')
+    postDueRecurring(db, '2026-02-15')
+    const before = db.prepare('SELECT nextRunOn FROM recurringRules WHERE id = ?').get(id)
+
+    await patch(id, { amountCents: 999 })
+
+    expect(db.prepare('SELECT nextRunOn FROM recurringRules WHERE id = ?').get(id)).toEqual(before)
   })
 })
 

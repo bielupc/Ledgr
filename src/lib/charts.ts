@@ -10,6 +10,13 @@ export const CHART_TOKENS = [
   '--chart-6',
   '--chart-7',
   '--chart-other',
+  '--chart-cat-1',
+  '--chart-cat-2',
+  '--chart-cat-3',
+  '--chart-cat-4',
+  '--chart-cat-5',
+  '--chart-cat-6',
+  '--chart-cat-7',
   '--chart-grid',
   '--chart-axis',
   '--foreground',
@@ -25,16 +32,18 @@ export const CHART_TOKENS = [
 export type Tokens = Record<string, string>
 
 /** Assigned in fixed order and never cycled: a category keeps its hue when the
- *  set is filtered, and a ninth series folds into "Other". */
+ *  set is filtered, and a ninth series folds into "Other". Red, blue and
+ *  green are excluded from this arbitrary-category palette — those hues are
+ *  reserved for expense, net worth and income respectively. */
 export function categoricalPalette(tokens: Tokens): string[] {
   return [
-    tokens['--chart-1'],
-    tokens['--chart-2'],
-    tokens['--chart-3'],
-    tokens['--chart-4'],
-    tokens['--chart-5'],
-    tokens['--chart-6'],
-    tokens['--chart-7'],
+    tokens['--chart-cat-1'],
+    tokens['--chart-cat-2'],
+    tokens['--chart-cat-3'],
+    tokens['--chart-cat-4'],
+    tokens['--chart-cat-5'],
+    tokens['--chart-cat-6'],
+    tokens['--chart-cat-7'],
   ].filter(Boolean) as string[]
 }
 

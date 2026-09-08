@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { dueOccurrences, occurrenceDate } from '../shared/recurrence.ts'
+import { describeRecurrence, dueOccurrences, occurrenceDate } from '../shared/recurrence.ts'
 
 describe('occurrenceDate', () => {
   it('returns the start date at index 0', () => {
@@ -66,5 +66,49 @@ describe('dueOccurrences', () => {
 
   it('returns nothing before the series starts', () => {
     expect(dueOccurrences(rule, 0, '2025-12-31')).toEqual([])
+  })
+})
+
+describe('describeRecurrence', () => {
+  it('names the cadence of a simple series', () => {
+    expect(describeRecurrence({ startDate: '2026-03-15', frequency: 'daily', intervalCount: 1 }))
+      .toBe('Every day')
+    expect(describeRecurrence({ startDate: '2026-03-17', frequency: 'weekly', intervalCount: 1 }))
+      .toBe('Weekly on Tuesday')
+    expect(describeRecurrence({ startDate: '2026-03-15', frequency: 'monthly', intervalCount: 1 }))
+      .toBe('Monthly on the 15th')
+    expect(describeRecurrence({ startDate: '2026-03-15', frequency: 'yearly', intervalCount: 1 }))
+      .toBe('Yearly on 15 Mar')
+  })
+
+  it('states the interval when a series skips periods', () => {
+    expect(describeRecurrence({ startDate: '2026-01-01', frequency: 'daily', intervalCount: 3 }))
+      .toBe('Every 3 days')
+    expect(describeRecurrence({ startDate: '2026-03-17', frequency: 'weekly', intervalCount: 2 }))
+      .toBe('Every 2 weeks on Tuesday')
+    expect(describeRecurrence({ startDate: '2026-03-01', frequency: 'monthly', intervalCount: 6 }))
+      .toBe('Every 6 months on the 1st')
+  })
+
+  /* The suffix rule the sentence is most likely to get wrong. */
+  it('spells the ordinals, teens included', () => {
+    const monthly = (day: string) =>
+      describeRecurrence({ startDate: `2026-01-${day}`, frequency: 'monthly', intervalCount: 1 })
+
+    expect(monthly('01')).toBe('Monthly on the 1st')
+    expect(monthly('02')).toBe('Monthly on the 2nd')
+    expect(monthly('03')).toBe('Monthly on the 3rd')
+    expect(monthly('11')).toBe('Monthly on the 11th')
+    expect(monthly('12')).toBe('Monthly on the 12th')
+    expect(monthly('13')).toBe('Monthly on the 13th')
+    expect(monthly('21')).toBe('Monthly on the 21st')
+    expect(monthly('31')).toBe('Monthly on the 31st')
+  })
+
+  /* The sentence has to describe the anchor, not the next posting: a rule on
+   * the 31st still says "the 31st" in a February that has no 31st. */
+  it('describes the anchor day even where a month is short of it', () => {
+    expect(describeRecurrence({ startDate: '2026-01-31', frequency: 'monthly', intervalCount: 1 }))
+      .toBe('Monthly on the 31st')
   })
 })

@@ -6,6 +6,7 @@ type QuickDialog =
   | { type: 'transaction'; kind: CategoryKind }
   | { type: 'transfer' }
   | { type: 'account' }
+  | { type: 'category'; kind: CategoryKind }
 
 interface QuickActionsValue {
   dialog: QuickDialog
@@ -14,6 +15,7 @@ interface QuickActionsValue {
   openTransaction: (kind: CategoryKind) => void
   openTransfer: () => void
   openAccount: () => void
+  openCategory: (kind: CategoryKind) => void
   close: () => void
 }
 
@@ -39,6 +41,10 @@ export function QuickActionsProvider({ children }: { children: React.ReactNode }
       openAccount: () => {
         setCommandOpen(false)
         setDialog({ type: 'account' })
+      },
+      openCategory: (kind) => {
+        setCommandOpen(false)
+        setDialog({ type: 'category', kind })
       },
       close: () => setDialog({ type: 'none' }),
     }),

@@ -56,3 +56,47 @@ export function dueOccurrences(
 
   return due
 }
+
+const ORDINAL_SUFFIXES = ['th', 'st', 'nd', 'rd'] as const
+
+/** 1st, 2nd, 3rd, 4th … 11th, 12th, 13th … 21st, 31st. */
+function ordinal(day: number): string {
+  // The teens are the exception: 11, 12 and 13 all take "th" despite ending
+  // in 1, 2 and 3.
+  const suffix = day % 100 >= 11 && day % 100 <= 13 ? 'th' : (ORDINAL_SUFFIXES[day % 10] ?? 'th')
+  return `${day}${suffix}`
+}
+
+/**
+ * A rule's cadence as a sentence: "Monthly on the 31st", "Every 2 weeks on
+ * Tuesday". Anchored to `startDate` because that is what the schedule is
+ * measured from — the same anchor `occurrenceDate` steps from, so the sentence
+ * and the postings can never describe different schedules.
+ */
+export function describeRecurrence(rule: {
+  startDate: string
+  frequency: Frequency
+  intervalCount: number
+}): string {
+  const start = parseISO(rule.startDate)
+  const every = rule.intervalCount > 1
+
+  switch (rule.frequency) {
+    case 'daily':
+      return every ? `Every ${rule.intervalCount} days` : 'Every day'
+    case 'weekly': {
+      const weekday = format(start, 'EEEE')
+      return every ? `Every ${rule.intervalCount} weeks on ${weekday}` : `Weekly on ${weekday}`
+    }
+    case 'monthly': {
+      // The rule keeps its day of month even where a month is short, so the
+      // sentence states the anchor day rather than the next posting's day.
+      const day = ordinal(start.getDate())
+      return every ? `Every ${rule.intervalCount} months on the ${day}` : `Monthly on the ${day}`
+    }
+    case 'yearly': {
+      const day = format(start, 'd MMM')
+      return every ? `Every ${rule.intervalCount} years on ${day}` : `Yearly on ${day}`
+    }
+  }
+}

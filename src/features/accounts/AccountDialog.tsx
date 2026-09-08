@@ -11,26 +11,49 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { useCreateAccount } from '@/features/accounts/hooks'
-import { ICON_NAMES, resolveIcon } from '@/lib/icons'
-import { cn } from '@/lib/utils'
+import { IconPicker } from '@/components/IconPicker'
+import { useCreateAccount, useUpdateAccount } from '@/features/accounts/hooks'
+import type { AccountBalance } from '@shared/types.ts'
 
-export function AccountDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function AccountDialog({
+  open,
+  account,
+  onClose,
+}: {
+  open: boolean
+  /** Present when renaming or re-opening an existing account. */
+  account?: AccountBalance
+  onClose: () => void
+}) {
+  /*
+   * Callers drop their editing row in the same tick they ask for a close, but
+   * the dialog is still animating out. Holding the last row keeps the title and
+   * submit label showing the edit on the way out rather than flashing back to
+   * "New account" for the length of the exit.
+   */
+  const [lastAccount, setLastAccount] = useState(account)
+  const held = open ? account : lastAccount
+
   const [name, setName] = useState('')
   const [icon, setIcon] = useState('wallet')
   const [balance, setBalance] = useState('')
   const [error, setError] = useState<string | null>(null)
 
   const create = useCreateAccount()
+  const update = useUpdateAccount()
+  const pending = create.isPending || update.isPending
+
+  useEffect(() => {
+    if (open) setLastAccount(account)
+  }, [open, account])
 
   useEffect(() => {
     if (!open) return
-    setName('')
-    setIcon('wallet')
-    setBalance('')
     setError(null)
-  }, [open])
+    setName(held?.name ?? '')
+    setIcon(held?.icon ?? 'wallet')
+    setBalance(held ? String(held.initialBalanceCents / 100).replace('.', ',') : '')
+  }, [open, held])
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault()
@@ -40,25 +63,35 @@ export function AccountDialog({ open, onClose }: { open: boolean; onClose: () =>
     const value = normalised === '' ? 0 : Number(normalised)
     if (!Number.isFinite(value)) return setError('That opening balance is not a number')
 
-    create.mutate(
-      { name: name.trim(), icon, initialBalanceCents: Math.round(value * 100), sortOrder: 0 },
-      {
-        onSuccess: () => {
-          toast.success(`${name.trim()} added`)
-          onClose()
-        },
-        onError: (mutationError) => setError(mutationError.message),
+    const input = { name: name.trim(), icon, initialBalanceCents: Math.round(value * 100) }
+    const settle = (message: string) => ({
+      onSuccess: () => {
+        toast.success(message)
+        onClose()
       },
-    )
+      onError: (mutationError: Error) => setError(mutationError.message),
+    })
+
+    if (held) {
+      return update.mutate({ id: held.id, input }, settle(`${input.name} updated`))
+    }
+    create.mutate({ ...input, sortOrder: 0 }, settle(`${input.name} added`))
   }
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
-      <DialogContent className="sm:max-w-[440px]">
+      <DialogContent className="sm:max-w-[400px]">
         <DialogHeader>
-          <DialogTitle>New account</DialogTitle>
-          <DialogDescription>
-            Its balance counts toward net worth from the opening figure onward.
+          <div className="flex items-center gap-2.5">
+            <IconPicker
+              value={icon}
+              onChange={(next) => setIcon(next ?? 'wallet')}
+              allowInherit={false}
+            />
+            <DialogTitle>{held ? 'Edit account' : 'New account'}</DialogTitle>
+          </div>
+          <DialogDescription className="sr-only">
+            Name the account and state the balance it starts from.
           </DialogDescription>
         </DialogHeader>
 
@@ -85,39 +118,10 @@ export function AccountDialog({ open, onClose }: { open: boolean; onClose: () =>
                 onChange={(event) => setBalance(event.target.value)}
                 className="tabular pr-9"
               />
-              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-subtle-foreground">
+              <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-subtle-foreground">
                 €
               </span>
             </div>
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <Label>Icon</Label>
-            <ScrollArea className="h-[132px] rounded-lg border border-border">
-              <div className="grid grid-cols-8 gap-1 p-2">
-                {ICON_NAMES.map((option) => {
-                  const Icon = resolveIcon(option)
-                  const selected = option === icon
-                  return (
-                    <button
-                      key={option}
-                      type="button"
-                      onClick={() => setIcon(option)}
-                      aria-label={option}
-                      aria-pressed={selected}
-                      className={cn(
-                        'grid aspect-square place-items-center rounded-md border transition-colors',
-                        selected
-                          ? 'border-emerald bg-emerald/10 text-accent-ink'
-                          : 'border-transparent text-muted-foreground hover:border-border hover:text-foreground',
-                      )}
-                    >
-                      <Icon className="size-4" strokeWidth={1.75} />
-                    </button>
-                  )
-                })}
-              </div>
-            </ScrollArea>
           </div>
 
           {error && <p className="text-[13px] text-destructive">{error}</p>}
@@ -126,8 +130,8 @@ export function AccountDialog({ open, onClose }: { open: boolean; onClose: () =>
             <Button type="button" variant="ghost" onClick={onClose}>
               Cancel
             </Button>
-            <Button type="submit" disabled={create.isPending}>
-              {create.isPending ? 'Adding…' : 'Add account'}
+            <Button type="submit" disabled={pending}>
+              {pending ? 'Saving…' : held ? 'Save changes' : 'Add account'}
             </Button>
           </DialogFooter>
         </form>

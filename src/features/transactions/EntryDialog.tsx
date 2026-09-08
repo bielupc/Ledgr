@@ -25,26 +25,32 @@ import { DatePicker } from '@/components/brand/DatePicker'
 import { IconPicker } from '@/components/IconPicker'
 import { useAccounts } from '@/features/accounts/hooks'
 import { useCategories } from '@/features/categories/hooks'
-import { useCreateTransaction } from '@/features/transactions/hooks'
-import { useCreateTransfer } from '@/features/transfers/hooks'
+import { useCreateTransaction, useUpdateTransaction } from '@/features/transactions/hooks'
+import { useCreateTransfer, useUpdateTransfer } from '@/features/transfers/hooks'
 import { resolveIcon } from '@/lib/icons'
 import { todayIso } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { DURATION, EASE } from '@/lib/motion'
 import type { CategoryKind } from '@shared/schemas.ts'
+import type { TransactionRow, TransferRow } from '@shared/types.ts'
 
 export type EntryMode = CategoryKind | 'transfer'
+
+/** What the dialog is editing, if anything. */
+export type EntryRecord =
+  | { type: 'transaction'; row: TransactionRow }
+  | { type: 'transfer'; row: TransferRow }
 
 const MODES = [
   { value: 'expense', label: 'Expense', icon: ArrowUpRight, tint: 'text-negative' },
   { value: 'income', label: 'Income', icon: ArrowDownLeft, tint: 'text-positive' },
-  { value: 'transfer', label: 'Transfer', icon: ArrowLeftRight, tint: 'text-accent-ink' },
+  { value: 'transfer', label: 'Transfer', icon: ArrowLeftRight, tint: 'text-transfer' },
 ] as const
 
 /*
- * One dialog for all three ways money moves. They share an amount and a date;
- * only the destination differs, which is a mode switch rather than a separate
- * modal to find.
+ * One dialog for all three ways money moves, whether the record is new or being
+ * corrected. They share an amount and a date; only the destination differs,
+ * which is a mode switch rather than a separate modal to find.
  */
 function AccountSelect({
   value,
@@ -80,12 +86,25 @@ function AccountSelect({
 export function EntryDialog({
   open,
   initialMode,
+  record,
   onClose,
 }: {
   open: boolean
   initialMode: EntryMode
+  /** Present when correcting an existing entry rather than adding one. */
+  record?: EntryRecord
   onClose: () => void
 }) {
+  /*
+   * Callers drop their editing row in the same tick they ask for a close, but
+   * the dialog is still animating out. Holding the last row keeps the form
+   * showing what it was editing on the way out — otherwise it flashes back to
+   * a blank "new entry", mode switcher and all, for the length of the exit.
+   */
+  const [lastRecord, setLastRecord] = useState(record)
+  const held = open ? record : lastRecord
+
+  const editing = Boolean(held)
   const [mode, setMode] = useState<EntryMode>(initialMode)
   const [amountCents, setAmountCents] = useState(0)
   const [occurredOn, setOccurredOn] = useState(todayIso)
@@ -97,33 +116,92 @@ export function EntryDialog({
   const [note, setNote] = useState('')
   const [error, setError] = useState<string | null>(null)
 
-  const accounts = useAccounts()
   const isTransfer = mode === 'transfer'
-  const categories = useCategories({ kind: isTransfer ? 'expense' : mode })
+  // A historical row can point at an archived account or category. Editing it
+  // has to keep that pick on screen rather than silently dropping it, so the
+  // archived rows are fetched and then filtered back out below.
+  const accounts = useAccounts(editing)
+  const categories = useCategories({
+    kind: isTransfer ? 'expense' : mode,
+    includeDeleted: editing,
+  })
+
   const createTransaction = useCreateTransaction()
+  const updateTransaction = useUpdateTransaction()
   const createTransfer = useCreateTransfer()
-  const pending = createTransaction.isPending || createTransfer.isPending
+  const updateTransfer = useUpdateTransfer()
+  const pending =
+    createTransaction.isPending ||
+    updateTransaction.isPending ||
+    createTransfer.isPending ||
+    updateTransfer.isPending
+
+  useEffect(() => {
+    if (open) setLastRecord(record)
+  }, [open, record])
 
   useEffect(() => {
     if (!open) return
+    setError(null)
+
+    if (held?.type === 'transfer') {
+      const row = held.row
+      setMode('transfer')
+      setAmountCents(row.amountCents)
+      setOccurredOn(row.occurredOn)
+      setAccountId(row.fromAccountId)
+      setToAccountId(row.toAccountId)
+      setNote(row.note ?? '')
+      setName('')
+      setIcon(null)
+      setCategoryId('')
+      return
+    }
+
+    if (held?.type === 'transaction') {
+      const row = held.row
+      setMode(row.kind)
+      setAmountCents(row.amountCents)
+      setOccurredOn(row.occurredOn)
+      setAccountId(row.accountId)
+      setCategoryId(row.categoryId ?? '')
+      setName(row.name ?? '')
+      setIcon(row.icon)
+      setNote('')
+      return
+    }
+
     setMode(initialMode)
     setAmountCents(0)
     setOccurredOn(todayIso())
+    setCategoryId('')
     setName('')
     setIcon(null)
     setNote('')
-    setError(null)
-  }, [open, initialMode])
-
-  // Categories are kind-specific, so a mode switch must drop a now-invalid pick.
-  useEffect(() => setCategoryId(''), [mode])
+  }, [open, initialMode, held])
 
   useEffect(() => {
     if (!accountId && accounts.data?.length) setAccountId(accounts.data[0]!.id)
   }, [accounts.data, accountId])
 
-  const options = accounts.data ?? []
-  const category = categories.data?.find((row) => row.id === categoryId)
+  const options = (accounts.data ?? []).filter(
+    (account) => !account.deletedAt || account.id === accountId || account.id === toAccountId,
+  )
+  const categoryOptions = (categories.data ?? []).filter(
+    (row) => !row.deletedAt || row.id === categoryId,
+  )
+  const category = categoryOptions.find((row) => row.id === categoryId)
+
+  /*
+   * Switching mode invalidates the category, which is kind-specific. Cleared
+   * here rather than in an effect on `mode`, because an effect also fires when
+   * the dialog sets the mode itself while loading a record to edit, and would
+   * wipe the category it had just filled in.
+   */
+  const switchMode = (next: EntryMode) => {
+    setMode(next)
+    setCategoryId('')
+  }
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault()
@@ -141,30 +219,34 @@ export function EntryDialog({
     if (isTransfer) {
       if (!toAccountId) return setError('Pick an account to move to')
       if (toAccountId === accountId) return setError('Pick two different accounts')
-      return createTransfer.mutate(
-        {
-          amountCents,
-          occurredOn,
-          fromAccountId: accountId,
-          toAccountId,
-          note: note.trim() || null,
-        },
-        settle('Transfer recorded'),
-      )
-    }
 
-    createTransaction.mutate(
-      {
-        kind: mode,
+      const input = {
         amountCents,
         occurredOn,
-        accountId,
-        categoryId: categoryId || null,
-        name: name.trim() || null,
-        icon,
-      },
-      settle(mode === 'expense' ? 'Expense added' : 'Income added'),
-    )
+        fromAccountId: accountId,
+        toAccountId,
+        note: note.trim() || null,
+      }
+
+      return held?.type === 'transfer'
+        ? updateTransfer.mutate({ id: held.row.id, input }, settle('Transfer updated'))
+        : createTransfer.mutate(input, settle('Transfer recorded'))
+    }
+
+    const input = {
+      kind: mode,
+      amountCents,
+      occurredOn,
+      accountId,
+      categoryId: categoryId || null,
+      name: name.trim() || null,
+      icon,
+    }
+
+    if (held?.type === 'transaction') {
+      return updateTransaction.mutate({ id: held.row.id, input }, settle('Entry updated'))
+    }
+    createTransaction.mutate(input, settle(mode === 'expense' ? 'Expense added' : 'Income added'))
   }
 
   return (
@@ -188,7 +270,9 @@ export function EntryDialog({
                 fallback={category?.icon ?? (mode === 'expense' ? 'receipt' : 'banknote')}
               />
             )}
-            <DialogTitle>New {mode}</DialogTitle>
+            <DialogTitle>
+              {editing ? 'Edit' : 'New'} {mode}
+            </DialogTitle>
           </div>
           {/* Kept for the accessible description, not shown: a caption here only
               restates the title. */}
@@ -198,34 +282,40 @@ export function EntryDialog({
         </DialogHeader>
 
         <form onSubmit={submit} className="flex flex-col gap-4">
-          <div className="grid grid-cols-3 gap-1 rounded-lg border border-border bg-surface/60 p-1">
-            {MODES.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => setMode(option.value)}
-                className={cn(
-                  'relative flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[12.5px] font-medium transition-colors duration-150',
-                  mode === option.value
-                    ? 'text-foreground'
-                    : 'text-muted-foreground hoverfine:text-foreground',
-                )}
-              >
-                {mode === option.value && (
-                  <motion.span
-                    layoutId="entry-mode"
-                    transition={{ duration: DURATION.fast, ease: EASE.out }}
-                    className="absolute inset-0 rounded-md border border-border bg-card"
+          {/* No mode row when editing: transfers and transactions live in
+              separate tables by design, so an edit cannot move a record between
+              them, and changing a transaction's kind would strand its category.
+              Both are delete-and-re-add. */}
+          {!editing && (
+            <div className="grid grid-cols-3 gap-1 rounded-lg border border-border bg-surface/60 p-1">
+              {MODES.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => switchMode(option.value)}
+                  className={cn(
+                    'relative flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[12.5px] font-medium transition-colors duration-150',
+                    mode === option.value
+                      ? 'text-foreground'
+                      : 'text-muted-foreground hoverfine:text-foreground',
+                  )}
+                >
+                  {mode === option.value && (
+                    <motion.span
+                      layoutId="entry-mode"
+                      transition={{ duration: DURATION.fast, ease: EASE.out }}
+                      className="absolute inset-0 rounded-md border border-border bg-card"
+                    />
+                  )}
+                  <option.icon
+                    className={cn('relative size-3.5', mode === option.value && option.tint)}
+                    strokeWidth={2.25}
                   />
-                )}
-                <option.icon
-                  className={cn('relative size-3.5', mode === option.value && option.tint)}
-                  strokeWidth={2.25}
-                />
-                <span className="relative">{option.label}</span>
-              </button>
-            ))}
-          </div>
+                  <span className="relative">{option.label}</span>
+                </button>
+              ))}
+            </div>
+          )}
 
           <AmountPad
             cents={amountCents}
@@ -249,7 +339,7 @@ export function EntryDialog({
                 </div>
 
                 <span className="grid h-9 w-5 place-items-center">
-                  <ArrowRight className="size-3.5 text-accent-ink" strokeWidth={2.5} />
+                  <ArrowRight className="size-3.5 text-transfer" strokeWidth={2.5} />
                 </span>
 
                 <div className="flex min-w-0 flex-col gap-1.5">
@@ -311,7 +401,7 @@ export function EntryDialog({
                       <SelectValue placeholder="Uncategorised" />
                     </SelectTrigger>
                     <SelectContent>
-                      {categories.data?.map((row) => {
+                      {categoryOptions.map((row) => {
                         const Icon = resolveIcon(row.icon)
                         return (
                           <SelectItem key={row.id} value={row.id}>
@@ -344,12 +434,18 @@ export function EntryDialog({
               Cancel
             </Button>
             <Button type="submit" className="gap-1.5" disabled={pending}>
-              {isTransfer ? (
+              {isTransfer && !editing ? (
                 <ArrowLeftRight className="size-4" strokeWidth={2.25} />
               ) : (
                 <Check className="size-4" strokeWidth={2.25} />
               )}
-              {pending ? 'Saving…' : isTransfer ? 'Record transfer' : `Add ${mode}`}
+              {pending
+                ? 'Saving…'
+                : editing
+                  ? 'Save changes'
+                  : isTransfer
+                    ? 'Record transfer'
+                    : `Add ${mode}`}
             </Button>
           </DialogFooter>
         </form>

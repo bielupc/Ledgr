@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { CalendarDays } from 'lucide-react'
+import { CalendarDays, X } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -7,8 +7,11 @@ import { cn } from '@/lib/utils'
 
 interface DatePickerProps {
   /** `YYYY-MM-DD`. The wire format never becomes a Date outside this component. */
-  value: string
+  value: string | null
   onChange: (value: string) => void
+  /** Given, the popover offers a way back to no date at all. */
+  onClear?: () => void
+  placeholder?: string
   id?: string
   className?: string
 }
@@ -18,7 +21,14 @@ interface DatePickerProps {
  * an en-US install) and its own control chrome, neither of which the app can
  * style. This keeps the ISO string on the wire and owns the presentation.
  */
-export function DatePicker({ value, onChange, id, className }: DatePickerProps) {
+export function DatePicker({
+  value,
+  onChange,
+  onClear,
+  placeholder = 'Pick a date',
+  id,
+  className,
+}: DatePickerProps) {
   const [open, setOpen] = useState(false)
   const selected = value ? parseISO(value) : undefined
 
@@ -35,8 +45,8 @@ export function DatePicker({ value, onChange, id, className }: DatePickerProps) 
         )}
       >
         <CalendarDays className="size-3.5 shrink-0 text-muted-foreground" strokeWidth={2} />
-        <span className="tabular truncate">
-          {selected ? format(selected, 'dd/MM/yyyy') : 'Pick a date'}
+        <span className={cn('tabular truncate', !selected && 'text-muted-foreground')}>
+          {selected ? format(selected, 'dd/MM/yyyy') : placeholder}
         </span>
       </PopoverTrigger>
 
@@ -64,6 +74,22 @@ export function DatePicker({ value, onChange, id, className }: DatePickerProps) 
             today: 'rounded-md font-semibold text-accent-ink',
           }}
         />
+
+        {/* A footer row rather than an X in the trigger: the trigger is itself
+            a button, and a button inside it is invalid markup. */}
+        {onClear && (
+          <button
+            type="button"
+            onClick={() => {
+              onClear()
+              setOpen(false)
+            }}
+            className="flex w-full items-center gap-2 border-t border-border px-3 py-2 text-[12.5px] text-muted-foreground transition-colors duration-150 hoverfine:text-foreground"
+          >
+            <X className="size-3.5" strokeWidth={2} />
+            {placeholder}
+          </button>
+        )}
       </PopoverContent>
     </Popover>
   )

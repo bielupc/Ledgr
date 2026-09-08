@@ -66,11 +66,11 @@ export function NetWorthHero({ month }: { month: string }) {
           symbol: 'circle',
           symbolSize: 8,
           showSymbol: false,
-          lineStyle: { width: 2, color: tokens['--emerald'] },
-          itemStyle: { color: tokens['--emerald'], borderWidth: 2 },
+          lineStyle: { width: 2, color: tokens['--chart-4'] },
+          itemStyle: { color: tokens['--chart-4'], borderWidth: 2 },
           areaStyle: {
             opacity: 0.14,
-            color: tokens['--emerald'],
+            color: tokens['--chart-4'],
           },
         },
       ],
@@ -120,7 +120,7 @@ export function NetWorthHero({ month }: { month: string }) {
           </div>
         )}
 
-        <div className="relative z-10 flex min-h-[152px] w-[30%] min-w-[340px] flex-col gap-1.5 px-6 py-5">
+        <div className="relative z-10 flex min-h-[152px] w-[30%] min-w-[340px] flex-col gap-0 px-6 py-5">
         {/* Stated as of the viewed month, while the Balances panel below is
             always current. Say which, or the two totals look contradictory. */}
         <span className="label-mono">

@@ -19,7 +19,7 @@ const isOther = (row: CategoryTotal) =>
 
 /** Same slot rule for the canvas and the HTML legend, so they cannot drift. */
 const colorVar = (index: number, row: CategoryTotal) =>
-  isOther(row) ? 'var(--chart-other)' : `var(--chart-${(index % 7) + 1})`
+  isOther(row) ? 'var(--chart-other)' : `var(--chart-cat-${(index % 7) + 1})`
 
 /** Beyond seven categories the tail folds into "Other" rather than inventing
  *  an eighth hue. */

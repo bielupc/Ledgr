@@ -68,6 +68,15 @@
   --destructive-foreground: #ffffff;
   --positive: var(--emerald-deep);
   --negative: #c8372d;
+  /*
+   * Transfers are the third direction, so they get an ink beside the other two
+   * rather than borrowing emerald — which said "accent" where the row means
+   * "neither in nor out". Not `--chart-4`: that blue is a mark colour and
+   * scores 3.76:1 on Paper, the same way bright Emerald fails as text. These
+   * land at 5.34 / 7.56 against their grounds, in step with the 4.57 / 7.11 the
+   * negative ink already carries, so the three directions read at one weight.
+   */
+  --transfer: #0a63b4;
 
   --border: color-mix(in srgb, var(--carbon) 12%, transparent);
   --border-strong: color-mix(in srgb, var(--carbon) 20%, transparent);
@@ -95,6 +104,22 @@
   --chart-6: #7366d9;
   --chart-7: #7f8002;
   --chart-other: #6b7280;
+
+  /*
+   * Category-safe palette: expense/income pies and the balances share grid
+   * encode arbitrary categories (a category, an account) rather than a sign,
+   * so red/blue/green are off-limits here — those hues are reserved
+   * elsewhere for expense, net worth and income respectively. Generated in
+   * OKLCH across the orange/amber and magenta/violet arcs only and passing
+   * the same six checks.
+   */
+  --chart-cat-1: #c1552c;
+  --chart-cat-2: #a059b1;
+  --chart-cat-3: #b36303;
+  --chart-cat-4: #ae539d;
+  --chart-cat-5: #9f7100;
+  --chart-cat-6: #8f5fc0;
+  --chart-cat-7: #90790f;
 
   --chart-grid: color-mix(in srgb, var(--carbon) 8%, transparent);
   --chart-axis: color-mix(in srgb, var(--carbon) 38%, transparent);
@@ -140,6 +165,7 @@
   --destructive-foreground: var(--carbon);
   --positive: var(--emerald);
   --negative: #ff6b5e;
+  --transfer: #4da3ff;
 
   --border: color-mix(in srgb, var(--paper) 10%, transparent);
   --border-strong: color-mix(in srgb, var(--paper) 16%, transparent);
@@ -159,6 +185,15 @@
   --chart-6: #8479ee;
   --chart-7: #929208;
   --chart-other: #8b9199;
+
+  /* Same category-safe hues, re-stepped for the dark surface. */
+  --chart-cat-1: #d6673f;
+  --chart-cat-2: #b36bc4;
+  --chart-cat-3: #cc7200;
+  --chart-cat-4: #c265b0;
+  --chart-cat-5: #b5820c;
+  --chart-cat-6: #a272d4;
+  --chart-cat-7: #a58a07;
 
   --chart-grid: color-mix(in srgb, var(--paper) 7%, transparent);
   --chart-axis: color-mix(in srgb, var(--paper) 40%, transparent);
@@ -189,6 +224,7 @@
   --color-destructive-foreground: var(--destructive-foreground);
   --color-positive: var(--positive);
   --color-negative: var(--negative);
+  --color-transfer: var(--transfer);
   --color-border: var(--border);
   --color-border-strong: var(--border-strong);
   --color-input: var(--input);
@@ -202,6 +238,14 @@
   --color-chart-6: var(--chart-6);
   --color-chart-7: var(--chart-7);
   --color-chart-other: var(--chart-other);
+
+  --color-chart-cat-1: var(--chart-cat-1);
+  --color-chart-cat-2: var(--chart-cat-2);
+  --color-chart-cat-3: var(--chart-cat-3);
+  --color-chart-cat-4: var(--chart-cat-4);
+  --color-chart-cat-5: var(--chart-cat-5);
+  --color-chart-cat-6: var(--chart-cat-6);
+  --color-chart-cat-7: var(--chart-cat-7);
 
   --color-carbon: var(--carbon);
   --color-carbon-2: var(--carbon-2);
@@ -258,6 +302,27 @@
     letter-spacing: 0.02em;
   }
 
+  /*
+   * Row affordances rest visible and hide themselves only where a pointer can
+   * bring them back. Written the other way round — hidden by default, revealed
+   * on hover — they are unreachable on any device that cannot hover, which is
+   * exactly the device that has no way to discover them.
+   */
+  .row-action {
+    opacity: 1;
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .row-action {
+      opacity: 0;
+    }
+
+    .group:hover .row-action,
+    .row-action:focus-visible {
+      opacity: 1;
+    }
+  }
+
   .label-mono {
     font-family: var(--font-mono);
     font-size: 0.625rem;
@@ -297,6 +362,19 @@
 
   .cell-meter[data-tone='negative'] {
     --meter-ink: var(--negative);
+  }
+
+  /*
+   * Magnitude with nothing at stake: a run of limits ranked against each other
+   * has no state to report, and Emerald is spent on state. Muted ink keeps the
+   * ranking pre-attentive while staying quieter than the figure beside it.
+   *
+   * Mixed into `--card` rather than handed `--muted-foreground`: the text ramp
+   * is itself translucent, and the cell rules mix the ink down again, so a
+   * translucent ink compounds to roughly a third alpha and the run disappears.
+   */
+  .cell-meter[data-tone='neutral'] {
+    --meter-ink: color-mix(in srgb, var(--foreground) 58%, var(--card));
   }
 
   .cell-meter > span {

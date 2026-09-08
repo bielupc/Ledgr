@@ -20,15 +20,18 @@ import { allocateCells } from '@/lib/allocate'
  * Held well back from full chroma at rest: seven saturated hues would take over
  * the card and overrun the brand's 78/18/4 proportion. Inspecting one lifts it
  * to full strength, which is the only place the palette is spent in full.
+ *
+ * Drawn from the category-safe set: an account is an arbitrary identity here,
+ * not a sign, so red/blue/green stay reserved for expense/net worth/income.
  */
 const TONES = [
-  'var(--chart-1)',
-  'var(--chart-2)',
-  'var(--chart-3)',
-  'var(--chart-4)',
-  'var(--chart-5)',
-  'var(--chart-6)',
-  'var(--chart-7)',
+  'var(--chart-cat-1)',
+  'var(--chart-cat-2)',
+  'var(--chart-cat-3)',
+  'var(--chart-cat-4)',
+  'var(--chart-cat-5)',
+  'var(--chart-cat-6)',
+  'var(--chart-cat-7)',
 ]
 const toneFor = (index: number) => TONES[index] ?? 'var(--chart-other)'
 

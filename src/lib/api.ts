@@ -90,6 +90,8 @@ export const api = {
   transactions: {
     list: (params: {
       month?: string
+      from?: string
+      to?: string
       kind?: string
       accountId?: string
       categoryId?: string
@@ -103,8 +105,14 @@ export const api = {
   },
 
   transfers: {
-    list: (params: { month?: string; accountId?: string; search?: string; limit?: number }) =>
-      request<TransferRow[]>(`/transfers${search(params)}`),
+    list: (params: {
+      month?: string
+      from?: string
+      to?: string
+      accountId?: string
+      search?: string
+      limit?: number
+    }) => request<TransferRow[]>(`/transfers${search(params)}`),
     create: (input: TransferInput) => send<TransferRow>('POST', '/transfers', input),
     update: (id: string, input: Partial<TransferInput>) =>
       send<TransferRow>('PATCH', `/transfers/${id}`, input),

@@ -94,7 +94,11 @@ Two invariants hold this together, and both have tests:
 ## Analytics surface
 
 Net worth over time (from snapshots); monthly income; monthly expense; monthly balance (income − expense); expense-by-category and income-by-category pie charts for a month-picker-selected month; account balances as a share of net worth (100 cells, one per percent, via `<ShareGrid>`);
-current-month budget status (spent vs. budget per category); filterable tables of the month's expenses, incomes and transfers.
+current-month budget status (spent vs. budget per category); filterable tables of the month's expenses, income and transfers, on `/transactions` via `<DataTable>` and `<FilterBar>`.
+
+Filtering is done by the API, not by the table: the server already takes month, kind, account,
+category and search, and filtering the page of rows the client happens to hold would disagree
+with the totals underneath it. Sorting is the table's.
 
 ## Empty states
 
@@ -139,6 +143,30 @@ Charts register only the ECharts pieces they use (`src/components/charts/Chart.t
 
 Minimize comments. Explain non-obvious logic only — never restate what the code visibly does.
 
+## Screens
+
+Dashboard, Transactions, Accounts, Categories, Budgets and Recurring are built. Routes are
+code-split (`React.lazy` in `src/App.tsx`, one `<Suspense>` boundary in `AppShell`): the
+dashboard alone pulls in ECharts and the tables pull in TanStack Table, so loading both up
+front would make the first paint wait on code the screen in front of you does not use.
+
+Two conventions hold across the management screens:
+
+- **An edit never moves a record between tables.** Transfers and transactions are separate
+  tables by design, and a transaction's kind is fixed once it exists, because changing it
+  would strand the category it is filed under. Both are delete-and-re-add, so the entry
+  dialog hides its mode switcher when editing rather than offering a move it cannot make.
+- **Archiving is explained, not just confirmed.** A soft delete and a hard delete look
+  identical at the moment of clicking, so every `<ConfirmDialog>` says what actually survives:
+  which pickers the record leaves, what happens to its history, and what gets paused.
+
+Editing a historical row can point at an archived account or category, so the entry and
+recurring dialogs fetch with `includeDeleted` and filter the archived rows back out except
+the one the record already holds. Otherwise the pick silently disappears from its own form.
+
 ## Out of scope for this phase
 
-Mobile-optimized UI and quick-input flows. The **Investments**, **AI agent** and **Integrations** routes exist as placeholder tabs so the nav is complete, but none of the three is built and the MCP server is unwritten. Don't build toward them speculatively.
+Mobile-optimized UI and quick-input flows. The **Goals**, **Investments**, **AI agent**,
+**Integrations** and **Reports** routes exist as placeholder tabs so the nav is complete, but
+none is built, Goals has no data model at all, and the MCP server is unwritten. Don't build
+toward them speculatively.
