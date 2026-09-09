@@ -4,7 +4,9 @@ import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
-const API_PORT = process.env.API_PORT ?? '5174'
+// wrangler dev's default local port for the Worker (server/index.ts),
+// matching wrangler.toml's [dev] port.
+const API_PORT = process.env.API_PORT ?? '8787'
 
 export default defineConfig({
   resolve: {

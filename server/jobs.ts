@@ -13,71 +13,72 @@ export interface JobReport {
  * Posts every occurrence that has come due, catching up however many were
  * missed while the app was closed. Safe to run repeatedly: the partial unique
  * index on (recurringRuleId, occurredOn) absorbs any re-posting.
+ *
+ * D1 has no imperative `db.transaction(fn)` the way better-sqlite3 does —
+ * atomicity comes from collecting every bound statement while looping (no
+ * execution inside the loop) and running them all in one `db.batch()` call.
  */
-export function postDueRecurring(db: DB, throughDate: string = today()): number {
-  const rules = db
+export async function postDueRecurring(db: DB, throughDate: string = today()): Promise<number> {
+  const { results: rules } = await db
     .prepare(
       `SELECT * FROM recurringRules
        WHERE deletedAt IS NULL AND isActive = 1 AND nextRunOn <= ?`,
     )
-    .all(throughDate) as RecurringRule[]
+    .bind(throughDate)
+    .all<RecurringRule>()
 
-  const insert = db.prepare(
-    `INSERT OR IGNORE INTO transactions
+  const insertSql = `INSERT OR IGNORE INTO transactions
        (id, kind, occurredOn, amountCents, accountId, categoryId, name, icon, recurringRuleId)
-     VALUES (@id, @kind, @occurredOn, @amountCents, @accountId, @categoryId, @name, NULL, @recurringRuleId)`,
-  )
-  const advance = db.prepare(
-    `UPDATE recurringRules
-       SET occurrenceIndex = @occurrenceIndex,
-           nextRunOn = @nextRunOn,
-           lastPostedOn = @lastPostedOn,
-           isActive = @isActive
-     WHERE id = @id`,
-  )
+     VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?)`
+  const advanceSql = `UPDATE recurringRules
+       SET occurrenceIndex = ?, nextRunOn = ?, lastPostedOn = ?, isActive = ?
+     WHERE id = ?`
 
-  let posted = 0
+  // Tagged so the count below can sum only the inserts' `changes` — the
+  // advance UPDATEs ride in the same batch but aren't postings.
+  const ops: { stmt: D1PreparedStatement; isInsert: boolean }[] = []
 
-  const run = db.transaction(() => {
-    for (const rule of rules) {
-      const due = dueOccurrences(rule, rule.occurrenceIndex, throughDate)
-      if (due.length === 0) continue
+  for (const rule of rules) {
+    const due = dueOccurrences(rule, rule.occurrenceIndex, throughDate)
+    if (due.length === 0) continue
 
-      for (const occurrence of due) {
-        const result = insert.run({
-          id: newId(),
-          kind: rule.kind,
-          occurredOn: occurrence.date,
-          amountCents: rule.amountCents,
-          accountId: rule.accountId,
-          categoryId: rule.categoryId,
-          name: rule.name,
-          recurringRuleId: rule.id,
-        })
-        posted += result.changes
-      }
-
-      const nextIndex = due[due.length - 1]!.index + 1
-      const nextRunOn = occurrenceDate(
-        rule.startDate,
-        rule.frequency,
-        rule.intervalCount,
-        nextIndex,
-      )
-      const exhausted = Boolean(rule.endDate && nextRunOn > rule.endDate)
-
-      advance.run({
-        id: rule.id,
-        occurrenceIndex: nextIndex,
-        nextRunOn,
-        lastPostedOn: due[due.length - 1]!.date,
-        isActive: exhausted ? 0 : 1,
+    for (const occurrence of due) {
+      ops.push({
+        isInsert: true,
+        stmt: db
+          .prepare(insertSql)
+          .bind(
+            newId(),
+            rule.kind,
+            occurrence.date,
+            rule.amountCents,
+            rule.accountId,
+            rule.categoryId,
+            rule.name,
+            rule.id,
+          ),
       })
     }
-  })
 
-  run()
-  return posted
+    const nextIndex = due[due.length - 1]!.index + 1
+    const nextRunOn = occurrenceDate(rule.startDate, rule.frequency, rule.intervalCount, nextIndex)
+    const exhausted = Boolean(rule.endDate && nextRunOn > rule.endDate)
+
+    ops.push({
+      isInsert: false,
+      stmt: db
+        .prepare(advanceSql)
+        .bind(nextIndex, nextRunOn, due[due.length - 1]!.date, exhausted ? 0 : 1, rule.id),
+    })
+  }
+
+  if (ops.length === 0) return 0
+
+  const results = await db.batch(ops.map((op) => op.stmt))
+  return results.reduce(
+    (posted, result, index) => posted + (ops[index]!.isInsert ? (result.meta.changes ?? 0) : 0),
+    0,
+  )
 }
 
 /**
@@ -85,28 +86,36 @@ export function postDueRecurring(db: DB, throughDate: string = today()): number 
  * month's end — or as of today for the month still in progress, which is why
  * re-running within a month updates the row rather than adding one.
  */
-export function captureNetWorthSnapshot(db: DB, onDate: string = today()): void {
+export async function captureNetWorthSnapshot(db: DB, onDate: string = today()): Promise<void> {
   const monthKey = `${onDate.slice(0, 7)}-01`
   const monthEnd = format(endOfMonth(parseISO(monthKey)), 'yyyy-MM-dd')
   const valuedOn = monthEnd > onDate ? onDate : monthEnd
 
-  db.prepare(
-    `INSERT INTO netWorthSnapshots (id, capturedOn, amountCents)
-     VALUES (@id, @capturedOn, @amountCents)
-     ON CONFLICT (capturedOn) DO UPDATE SET amountCents = excluded.amountCents`,
-  ).run({
-    id: newId(),
-    capturedOn: monthKey,
-    amountCents: netWorthAsOf(db, valuedOn),
-  })
+  const amountCents = await netWorthAsOf(db, valuedOn)
+
+  await db
+    .prepare(
+      `INSERT INTO netWorthSnapshots (id, capturedOn, amountCents)
+       VALUES (?, ?, ?)
+       ON CONFLICT (capturedOn) DO UPDATE SET amountCents = excluded.amountCents`,
+    )
+    .bind(newId(), monthKey, amountCents)
+    .run()
 }
 
 /**
- * Fills in months between the earliest recorded activity and now. Without this
- * the net worth chart is a single point until the app has run for months.
+ * Fills in months between the earliest recorded activity and now. Without
+ * this the net worth chart is a single point until the app has run for
+ * months.
+ *
+ * Each iteration reads current balances before it can write a snapshot, so
+ * unlike `postDueRecurring` this can't be collected into one `db.batch()` —
+ * the statements aren't independent. It also doesn't need to be: a crash
+ * mid-backfill just leaves some months uncaptured, and the next scheduled run
+ * (or the next dashboard load) fills them in the same idempotent way.
  */
-export function backfillNetWorthSnapshots(db: DB, throughDate: string = today()): number {
-  const earliest = db
+export async function backfillNetWorthSnapshots(db: DB, throughDate: string = today()): Promise<number> {
+  const earliest = await db
     .prepare(
       `SELECT min(d) AS first FROM (
          SELECT min(occurredOn) AS d FROM transactions
@@ -114,30 +123,27 @@ export function backfillNetWorthSnapshots(db: DB, throughDate: string = today())
          UNION ALL SELECT min(date(createdAt)) FROM accounts
        )`,
     )
-    .get() as { first: string | null }
+    .first<{ first: string | null }>()
 
-  if (!earliest.first) return 0
+  if (!earliest?.first) return 0
 
   let cursor = `${earliest.first.slice(0, 7)}-01`
   const lastMonth = `${throughDate.slice(0, 7)}-01`
   let written = 0
 
-  const run = db.transaction(() => {
-    while (cursor <= lastMonth) {
-      captureNetWorthSnapshot(db, cursor === lastMonth ? throughDate : cursor)
-      written += 1
-      const next = parseISO(cursor)
-      next.setMonth(next.getMonth() + 1)
-      cursor = `${format(next, 'yyyy-MM')}-01`
-    }
-  })
+  while (cursor <= lastMonth) {
+    await captureNetWorthSnapshot(db, cursor === lastMonth ? throughDate : cursor)
+    written += 1
+    const next = parseISO(cursor)
+    next.setMonth(next.getMonth() + 1)
+    cursor = `${format(next, 'yyyy-MM')}-01`
+  }
 
-  run()
   return written
 }
 
-export function runJobs(db: DB, throughDate: string = today()): JobReport {
-  const postedTransactions = postDueRecurring(db, throughDate)
-  const snapshotsWritten = backfillNetWorthSnapshots(db, throughDate)
+export async function runJobs(db: DB, throughDate: string = today()): Promise<JobReport> {
+  const postedTransactions = await postDueRecurring(db, throughDate)
+  const snapshotsWritten = await backfillNetWorthSnapshots(db, throughDate)
   return { postedTransactions, snapshotsWritten }
 }

@@ -1,25 +1,28 @@
+import { execSync } from 'node:child_process'
 import fs from 'node:fs'
-import { openDatabase, resolveDbPath } from '../server/db.ts'
-import { seed } from '../server/seed.ts'
+import { openLocalD1 } from './local-d1.ts'
+import { seed } from './seed-data.ts'
 
 const empty = process.argv.includes('--empty')
-const file = resolveDbPath()
 
-for (const suffix of ['', '-shm', '-wal']) {
-  fs.rmSync(`${file}${suffix}`, { force: true })
-}
+// Wipe local D1 state, same as the old script's fs.rmSync on the sqlite
+// file — then let `wrangler d1 migrations apply` recreate the schema fresh.
+fs.rmSync('.wrangler/state/v3/d1', { recursive: true, force: true })
+execSync('wrangler d1 migrations apply ledgr --local --persist-to=.wrangler/state', {
+  stdio: 'inherit',
+})
 
-const db = openDatabase(file)
-if (!empty) seed(db)
+const { db, close } = await openLocalD1()
+if (!empty) await seed(db)
 
-const counts = db
+const counts = await db
   .prepare(
     `SELECT (SELECT count(*) FROM accounts) AS accounts,
             (SELECT count(*) FROM transactions) AS transactions,
             (SELECT count(*) FROM transfers) AS transfers,
             (SELECT count(*) FROM netWorthSnapshots) AS snapshots`,
   )
-  .get()
+  .first()
 
-console.log(`[db:reset] ${empty ? 'empty' : 'seeded'} database at ${file}`, counts)
-db.close()
+console.log(`[db:reset] ${empty ? 'empty' : 'seeded'} local D1 database`, counts)
+await close()

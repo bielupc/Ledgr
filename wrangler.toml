@@ -1,0 +1,24 @@
+name = "ledgr-api"
+main = "server/index.ts"
+compatibility_date = "2026-09-09"
+
+# `wrangler d1 create ledgr` prints the real database_id — swap the
+# placeholder below for it before the first `wrangler deploy` or
+# `wrangler d1 migrations apply --remote`. Local dev (`wrangler dev`,
+# `wrangler d1 migrations apply --local`) works against this placeholder
+# unchanged: local D1 state is keyed by the `binding` name, not this id.
+[[d1_databases]]
+binding = "DB"
+database_name = "ledgr"
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+migrations_dir = "migrations"
+
+# Catch-up for recurring postings, same 30-minute cadence the Node process
+# used to run via setInterval. A Worker has no persistent process to hang
+# that off, so a Cron Trigger calls the `scheduled` handler in server/index.ts
+# instead — runJobs() is idempotent either way.
+[triggers]
+crons = ["*/30 * * * *"]
+
+[dev]
+port = 8787

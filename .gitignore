@@ -8,10 +8,8 @@ dist
 dist-ssr
 *.local
 
-# Local database
-data/*.db
-data/*.db-shm
-data/*.db-wal
+# Local D1 state (wrangler dev / db:reset / db:seed)
+.wrangler
 
 # Generated PWA assets
 dev-dist

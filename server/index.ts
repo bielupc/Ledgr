@@ -1,51 +1,51 @@
-import path from 'node:path'
-import { serve } from '@hono/node-server'
-import { serveStatic } from '@hono/node-server/serve-static'
 import { Hono } from 'hono'
+import { cors } from 'hono/cors'
 import { createApi } from './api.ts'
-import { openDatabase, resolveDbPath } from './db.ts'
 import { runJobs } from './jobs.ts'
 
-const PORT = Number(process.env.API_PORT ?? 5174)
-const IS_PROD = process.env.NODE_ENV === 'production'
-const JOB_INTERVAL_MS = 30 * 60 * 1000
-
-const db = openDatabase()
-const app = new Hono()
-
-app.route('/api', createApi(db))
-
-if (IS_PROD) {
-  app.use('/*', serveStatic({ root: path.relative(process.cwd(), 'dist') || './dist' }))
-  app.get('/*', serveStatic({ path: './dist/index.html' }))
-}
+const app = new Hono<{ Bindings: Env }>()
 
 /*
- * A local app cannot rely on cron — the machine is often asleep at the moment
- * something falls due. Running on boot and on an interval, with idempotent
- * jobs, means whatever was missed is simply caught up at next launch.
+ * The frontend lives on Pages, a different origin from this Worker, so
+ * cross-origin calls need CORS rather than the same-origin relative fetch a
+ * single Node process used to get for free. `_redirects`-based proxying
+ * (rewriting /api/* to an external origin) turned out not to be something
+ * Cloudflare Pages actually supports — see public/_redirects — so this is
+ * the real mechanism, not a fallback.
+ *
+ * Matches the stable Pages domain plus its per-deploy preview subdomains
+ * (<hash>.<project>.pages.dev) and localhost for anyone hitting the deployed
+ * API directly from a local build.
  */
-function tick() {
-  try {
-    const report = runJobs(db)
-    if (report.postedTransactions > 0) {
-      console.log(`[jobs] posted ${report.postedTransactions} recurring transaction(s)`)
-    }
-  } catch (error) {
-    console.error('[jobs] run failed', error)
-  }
-}
+const ALLOWED_ORIGINS = [/^https:\/\/([a-z0-9-]+\.)?ledgr-4g0\.pages\.dev$/, /^http:\/\/localhost:\d+$/]
 
-tick()
-setInterval(tick, JOB_INTERVAL_MS).unref()
+app.use(
+  '/api/*',
+  cors({
+    origin: (origin) => (origin && ALLOWED_ORIGINS.some((re) => re.test(origin)) ? origin : null),
+  }),
+)
 
-serve({ fetch: app.fetch, port: PORT }, (info) => {
-  console.log(`[ledgr] api on http://localhost:${info.port}  ·  db ${resolveDbPath()}`)
-})
+app.route('/api', createApi())
+app.get('/', (c) => c.text('Ledgr API — the frontend is served from Pages, not here.'))
 
-for (const signal of ['SIGINT', 'SIGTERM'] as const) {
-  process.on(signal, () => {
-    db.close()
-    process.exit(0)
-  })
-}
+export default {
+  fetch: app.fetch,
+
+  /*
+   * The Node process used to catch up recurring postings on boot and every
+   * 30 minutes via setInterval, because a laptop is often asleep at the
+   * moment something falls due. A Worker has no persistent process to run
+   * that on — the Cron Trigger in wrangler.toml calls this on the same
+   * schedule instead, and runJobs stays just as idempotent either way.
+   */
+  async scheduled(_event, env, ctx) {
+    ctx.waitUntil(
+      runJobs(env.DB).then((report) => {
+        if (report.postedTransactions > 0) {
+          console.log(`[jobs] posted ${report.postedTransactions} recurring transaction(s)`)
+        }
+      }),
+    )
+  },
+} satisfies ExportedHandler<Env>

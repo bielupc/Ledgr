@@ -1,0 +1,12 @@
+# NOT an API proxy: Cloudflare Pages' _redirects can only rewrite to relative
+# paths on the same site — "Proxying will only support relative URLs on your
+# site. You cannot proxy external domains." So /api/* is never routed through
+# here; the client calls the Worker directly (src/lib/api.ts, VITE_API_URL)
+# and the Worker allows it with CORS (server/index.ts).
+#
+# This rule is real, just smaller than it looks: react-router needs a direct
+# load of a route like /transactions to still serve index.html rather than
+# 404. Pages already falls back to index.html for any unmatched path by
+# default, so this is belt-and-suspenders — pinned explicitly rather than
+# relied on as an implicit default that could change.
+/*  /index.html  200

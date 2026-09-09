@@ -29,8 +29,17 @@ export class ApiError extends Error {
   }
 }
 
+/*
+ * In dev this is unset, so the fetch stays relative and Vite's own proxy
+ * (vite.config.ts) reaches the Worker on localhost. In a Pages build,
+ * VITE_API_URL (.env.production) points at the deployed Worker directly —
+ * Pages and Workers are different origins, so this crosses it with CORS
+ * (server/index.ts) rather than the same-origin request dev gets for free.
+ */
+const API_BASE = import.meta.env.VITE_API_URL ?? ''
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`/api${path}`, {
+  const response = await fetch(`${API_BASE}/api${path}`, {
     headers: init?.body ? { 'content-type': 'application/json' } : undefined,
     ...init,
   })

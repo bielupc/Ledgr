@@ -20,79 +20,84 @@ export function monthBounds(month: string): { start: string; end: string } {
 }
 
 /** Net worth is the sum of live account balances as they stood on `date`. */
-export function netWorthAsOf(db: DB, date: string): number {
-  const row = db
+export async function netWorthAsOf(db: DB, date: string): Promise<number> {
+  // ?1 rather than four separate binds: the same date is read four times and
+  // D1's ordered params let one bound value be referenced repeatedly.
+  const row = await db
     .prepare(
       `SELECT coalesce(sum(
          a.initialBalanceCents
          + coalesce((SELECT sum(t.amountCents) FROM transactions t
                      WHERE t.accountId = a.id AND t.kind = 'income'
-                       AND t.occurredOn <= @date), 0)
+                       AND t.occurredOn <= ?1), 0)
          - coalesce((SELECT sum(t.amountCents) FROM transactions t
                      WHERE t.accountId = a.id AND t.kind = 'expense'
-                       AND t.occurredOn <= @date), 0)
+                       AND t.occurredOn <= ?1), 0)
          + coalesce((SELECT sum(r.amountCents) FROM transfers r
-                     WHERE r.toAccountId = a.id AND r.occurredOn <= @date), 0)
+                     WHERE r.toAccountId = a.id AND r.occurredOn <= ?1), 0)
          - coalesce((SELECT sum(r.amountCents) FROM transfers r
-                     WHERE r.fromAccountId = a.id AND r.occurredOn <= @date), 0)
+                     WHERE r.fromAccountId = a.id AND r.occurredOn <= ?1), 0)
        ), 0) AS total
        FROM accounts a
        WHERE a.deletedAt IS NULL`,
     )
-    .get({ date }) as { total: number }
+    .bind(date)
+    .first<{ total: number }>()
 
-  return row.total
+  return row!.total
 }
 
-export function listAccountBalances(db: DB, includeDeleted = false): AccountBalance[] {
-  return db
+export async function listAccountBalances(db: DB, includeDeleted = false): Promise<AccountBalance[]> {
+  const { results } = await db
     .prepare(
       `SELECT id, name, icon, sortOrder, deletedAt, initialBalanceCents, balanceCents
        FROM accountBalances
        ${includeDeleted ? '' : 'WHERE deletedAt IS NULL'}
        ORDER BY sortOrder, name`,
     )
-    .all() as AccountBalance[]
+    .all<AccountBalance>()
+  return results
 }
 
-export function listTransactions(db: DB, query: TransactionQuery): TransactionRow[] {
+export async function listTransactions(db: DB, query: TransactionQuery): Promise<TransactionRow[]> {
   const where: string[] = []
-  const params: Record<string, unknown> = { limit: query.limit }
+  const params: unknown[] = []
 
   if (query.month) {
     const { start, end } = monthBounds(query.month)
-    where.push('t.occurredOn >= @start AND t.occurredOn < @end')
-    params.start = start
-    params.end = end
+    where.push('t.occurredOn >= ? AND t.occurredOn < ?')
+    params.push(start, end)
   }
   if (query.from) {
-    where.push('t.occurredOn >= @from')
-    params.from = query.from
+    where.push('t.occurredOn >= ?')
+    params.push(query.from)
   }
   if (query.to) {
-    where.push('t.occurredOn <= @to')
-    params.to = query.to
+    where.push('t.occurredOn <= ?')
+    params.push(query.to)
   }
   if (query.kind) {
-    where.push('t.kind = @kind')
-    params.kind = query.kind
+    where.push('t.kind = ?')
+    params.push(query.kind)
   }
   if (query.accountId) {
-    where.push('t.accountId = @accountId')
-    params.accountId = query.accountId
+    where.push('t.accountId = ?')
+    params.push(query.accountId)
   }
   if (query.categoryId) {
-    where.push('t.categoryId = @categoryId')
-    params.categoryId = query.categoryId
+    where.push('t.categoryId = ?')
+    params.push(query.categoryId)
   }
   if (query.search) {
-    where.push('(t.name LIKE @search OR c.name LIKE @search OR a.name LIKE @search)')
-    params.search = `%${query.search}%`
+    where.push('(t.name LIKE ? OR c.name LIKE ? OR a.name LIKE ?)')
+    const term = `%${query.search}%`
+    params.push(term, term, term)
   }
+  params.push(query.limit)
 
   // Accounts and categories join without a deletedAt filter: a soft-deleted
   // one must still render its name in the history it belongs to.
-  return db
+  const { results } = await db
     .prepare(
       `SELECT t.*,
               a.name AS accountName, a.icon AS accountIcon,
@@ -102,13 +107,15 @@ export function listTransactions(db: DB, query: TransactionQuery): TransactionRo
        LEFT JOIN categories c ON c.id = t.categoryId
        ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
        ORDER BY t.occurredOn DESC, t.createdAt DESC
-       LIMIT @limit`,
+       LIMIT ?`,
     )
-    .all(params) as TransactionRow[]
+    .bind(...params)
+    .all<TransactionRow>()
+  return results
 }
 
-export function getTransactionRow(db: DB, id: string): TransactionRow | undefined {
-  return db
+export async function getTransactionRow(db: DB, id: string): Promise<TransactionRow | undefined> {
+  const row = await db
     .prepare(
       `SELECT t.*,
               a.name AS accountName, a.icon AS accountIcon,
@@ -118,11 +125,13 @@ export function getTransactionRow(db: DB, id: string): TransactionRow | undefine
        LEFT JOIN categories c ON c.id = t.categoryId
        WHERE t.id = ?`,
     )
-    .get(id) as TransactionRow | undefined
+    .bind(id)
+    .first<TransactionRow>()
+  return row ?? undefined
 }
 
-export function getTransferRow(db: DB, id: string): TransferRow | undefined {
-  return db
+export async function getTransferRow(db: DB, id: string): Promise<TransferRow | undefined> {
+  const row = await db
     .prepare(
       `SELECT r.*,
               af.name AS fromAccountName, af.icon AS fromAccountIcon,
@@ -132,37 +141,40 @@ export function getTransferRow(db: DB, id: string): TransferRow | undefined {
        JOIN accounts at2 ON at2.id = r.toAccountId
        WHERE r.id = ?`,
     )
-    .get(id) as TransferRow | undefined
+    .bind(id)
+    .first<TransferRow>()
+  return row ?? undefined
 }
 
-export function listTransfers(db: DB, query: TransferQuery): TransferRow[] {
+export async function listTransfers(db: DB, query: TransferQuery): Promise<TransferRow[]> {
   const where: string[] = []
-  const params: Record<string, unknown> = { limit: query.limit }
+  const params: unknown[] = []
 
   if (query.month) {
     const { start, end } = monthBounds(query.month)
-    where.push('r.occurredOn >= @start AND r.occurredOn < @end')
-    params.start = start
-    params.end = end
+    where.push('r.occurredOn >= ? AND r.occurredOn < ?')
+    params.push(start, end)
   }
   if (query.from) {
-    where.push('r.occurredOn >= @from')
-    params.from = query.from
+    where.push('r.occurredOn >= ?')
+    params.push(query.from)
   }
   if (query.to) {
-    where.push('r.occurredOn <= @to')
-    params.to = query.to
+    where.push('r.occurredOn <= ?')
+    params.push(query.to)
   }
   if (query.accountId) {
-    where.push('(r.fromAccountId = @accountId OR r.toAccountId = @accountId)')
-    params.accountId = query.accountId
+    where.push('(r.fromAccountId = ? OR r.toAccountId = ?)')
+    params.push(query.accountId, query.accountId)
   }
   if (query.search) {
-    where.push('(r.note LIKE @search OR af.name LIKE @search OR at2.name LIKE @search)')
-    params.search = `%${query.search}%`
+    where.push('(r.note LIKE ? OR af.name LIKE ? OR at2.name LIKE ?)')
+    const term = `%${query.search}%`
+    params.push(term, term, term)
   }
+  params.push(query.limit)
 
-  return db
+  const { results } = await db
     .prepare(
       `SELECT r.*,
               af.name AS fromAccountName, af.icon AS fromAccountIcon,
@@ -172,32 +184,32 @@ export function listTransfers(db: DB, query: TransferQuery): TransferRow[] {
        JOIN accounts at2 ON at2.id = r.toAccountId
        ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
        ORDER BY r.occurredOn DESC, r.createdAt DESC
-       LIMIT @limit`,
+       LIMIT ?`,
     )
-    .all(params) as TransferRow[]
+    .bind(...params)
+    .all<TransferRow>()
+  return results
 }
 
 /**
  * Income/expense totals per month, zero-filled so the chart has no gaps.
  * Reads `transactions` only — transfers are internal movement, not activity.
  */
-export function monthlyTotals(db: DB, months: number, endMonth: string): MonthlyTotals[] {
+export async function monthlyTotals(db: DB, months: number, endMonth: string): Promise<MonthlyTotals[]> {
   const first = format(subMonths(parseISO(`${endMonth}-01`), months - 1), 'yyyy-MM')
   const { end } = monthBounds(endMonth)
 
-  const rows = db
+  const { results: rows } = await db
     .prepare(
       `SELECT substr(occurredOn, 1, 7) AS month,
               sum(CASE WHEN kind = 'income'  THEN amountCents ELSE 0 END) AS incomeCents,
               sum(CASE WHEN kind = 'expense' THEN amountCents ELSE 0 END) AS expenseCents
        FROM transactions
-       WHERE occurredOn >= @start AND occurredOn < @end
+       WHERE occurredOn >= ? AND occurredOn < ?
        GROUP BY month`,
     )
-    .all({ start: `${first}-01`, end }) as Pick<
-    MonthlyTotals,
-    'month' | 'incomeCents' | 'expenseCents'
-  >[]
+    .bind(`${first}-01`, end)
+    .all<Pick<MonthlyTotals, 'month' | 'incomeCents' | 'expenseCents'>>()
 
   const byMonth = new Map(rows.map((r) => [r.month, r]))
 
@@ -210,14 +222,14 @@ export function monthlyTotals(db: DB, months: number, endMonth: string): Monthly
   })
 }
 
-export function totalsByCategory(
+export async function totalsByCategory(
   db: DB,
   month: string,
   kind: CategoryKind,
-): CategoryTotal[] {
+): Promise<CategoryTotal[]> {
   const { start, end } = monthBounds(month)
 
-  return db
+  const { results } = await db
     .prepare(
       `SELECT t.categoryId AS categoryId,
               coalesce(c.name, 'Uncategorised') AS categoryName,
@@ -226,18 +238,20 @@ export function totalsByCategory(
               sum(t.amountCents) AS totalCents
        FROM transactions t
        LEFT JOIN categories c ON c.id = t.categoryId
-       WHERE t.kind = @kind AND t.occurredOn >= @start AND t.occurredOn < @end
+       WHERE t.kind = ? AND t.occurredOn >= ? AND t.occurredOn < ?
        GROUP BY t.categoryId
        HAVING totalCents > 0
        ORDER BY totalCents DESC`,
     )
-    .all({ kind, start, end }) as CategoryTotal[]
+    .bind(kind, start, end)
+    .all<CategoryTotal>()
+  return results
 }
 
-export function budgetStatus(db: DB, month: string): BudgetStatus[] {
+export async function budgetStatus(db: DB, month: string): Promise<BudgetStatus[]> {
   const { start, end } = monthBounds(month)
 
-  return db
+  const { results } = await db
     .prepare(
       `SELECT b.categoryId,
               c.name  AS categoryName,
@@ -246,39 +260,41 @@ export function budgetStatus(db: DB, month: string): BudgetStatus[] {
               b.amountCents AS budgetCents,
               coalesce((SELECT sum(t.amountCents) FROM transactions t
                         WHERE t.categoryId = b.categoryId AND t.kind = 'expense'
-                          AND t.occurredOn >= @start AND t.occurredOn < @end), 0) AS spentCents
+                          AND t.occurredOn >= ?1 AND t.occurredOn < ?2), 0) AS spentCents
        FROM budgets b
        JOIN categories c ON c.id = b.categoryId
        WHERE c.deletedAt IS NULL
        ORDER BY spentCents * 1.0 / max(b.amountCents, 1) DESC, c.name`,
     )
-    .all({ start, end }) as BudgetStatus[]
+    .bind(start, end)
+    .all<BudgetStatus>()
+  return results
 }
 
-export function netWorthSeries(db: DB): NetWorthSnapshot[] {
-  return db
-    .prepare(
-      `SELECT capturedOn, amountCents FROM netWorthSnapshots ORDER BY capturedOn`,
-    )
-    .all() as NetWorthSnapshot[]
+export async function netWorthSeries(db: DB): Promise<NetWorthSnapshot[]> {
+  const { results } = await db
+    .prepare(`SELECT capturedOn, amountCents FROM netWorthSnapshots ORDER BY capturedOn`)
+    .all<NetWorthSnapshot>()
+  return results
 }
 
-export function dashboardSummary(
+export async function dashboardSummary(
   db: DB,
   month: string,
   today: string,
-): DashboardSummary {
+): Promise<DashboardSummary> {
   const { start, end } = monthBounds(month)
 
-  const totals = db
+  const totals = await db
     .prepare(
       `SELECT
          coalesce(sum(CASE WHEN kind = 'income'  THEN amountCents END), 0) AS incomeCents,
          coalesce(sum(CASE WHEN kind = 'expense' THEN amountCents END), 0) AS expenseCents
        FROM transactions
-       WHERE occurredOn >= @start AND occurredOn < @end`,
+       WHERE occurredOn >= ? AND occurredOn < ?`,
     )
-    .get({ start, end }) as { incomeCents: number; expenseCents: number }
+    .bind(start, end)
+    .first<{ incomeCents: number; expenseCents: number }>()
 
   /*
    * Net worth is stated as of the selected month's end — or today when that
@@ -292,15 +308,15 @@ export function dashboardSummary(
 
   // Opening balances count as prior net worth, so the comparison is missing
   // only when there is no account to compare at all.
-  const anyAccount = db
+  const anyAccount = await db
     .prepare('SELECT 1 AS present FROM accounts WHERE deletedAt IS NULL LIMIT 1')
-    .get() as { present: number } | undefined
+    .first<{ present: number }>()
 
   return {
-    netWorthCents: netWorthAsOf(db, asOf),
-    monthIncomeCents: totals.incomeCents,
-    monthExpenseCents: totals.expenseCents,
-    monthBalanceCents: totals.incomeCents - totals.expenseCents,
-    previousNetWorthCents: anyAccount ? netWorthAsOf(db, previousMonthEnd) : null,
+    netWorthCents: await netWorthAsOf(db, asOf),
+    monthIncomeCents: totals!.incomeCents,
+    monthExpenseCents: totals!.expenseCents,
+    monthBalanceCents: totals!.incomeCents - totals!.expenseCents,
+    previousNetWorthCents: anyAccount ? await netWorthAsOf(db, previousMonthEnd) : null,
   }
 }

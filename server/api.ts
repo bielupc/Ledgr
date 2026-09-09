@@ -67,33 +67,47 @@ function requireMonth(c: Context): string {
   return parsed.data
 }
 
-function found<T>(row: T | undefined, what: string): T {
+function found<T>(row: T | null | undefined, what: string): T {
   if (!row) throw new HttpError(404, `${what} not found`)
   return row
 }
 
+/** Builds `field = ?, field = ?` for a dynamic PATCH plus the matching
+ *  positional values, `id` last — D1 has no named-parameter binding. */
+function setClause<T extends Record<string, unknown>>(
+  patch: T,
+): { sql: string; values: unknown[] } {
+  const fields = Object.keys(patch)
+  return {
+    sql: fields.map((f) => `${f} = ?`).join(', '),
+    values: fields.map((f) => patch[f]),
+  }
+}
+
 /** A transaction's category must be of the same kind as the transaction. */
-function assertCategoryKind(db: DB, categoryId: string | null | undefined, kind: CategoryKind) {
+async function assertCategoryKind(db: DB, categoryId: string | null | undefined, kind: CategoryKind) {
   if (!categoryId) return
-  const row = db
+  const row = await db
     .prepare('SELECT kind FROM categories WHERE id = ?')
-    .get(categoryId) as { kind: CategoryKind } | undefined
+    .bind(categoryId)
+    .first<{ kind: CategoryKind }>()
   if (!row) throw new HttpError(400, 'Unknown category')
   if (row.kind !== kind) {
     throw new HttpError(400, `That category is an ${row.kind} category`)
   }
 }
 
-function assertAccountLive(db: DB, accountId: string) {
-  const row = db
+async function assertAccountLive(db: DB, accountId: string) {
+  const row = await db
     .prepare('SELECT deletedAt FROM accounts WHERE id = ?')
-    .get(accountId) as { deletedAt: string | null } | undefined
+    .bind(accountId)
+    .first<{ deletedAt: string | null }>()
   if (!row) throw new HttpError(400, 'Unknown account')
   if (row.deletedAt) throw new HttpError(400, 'That account has been deleted')
 }
 
-export function createApi(db: DB) {
-  const api = new Hono()
+export function createApi() {
+  const api = new Hono<{ Bindings: Env }>()
 
   api.onError((error, c) => {
     if (error instanceof HttpError) {
@@ -105,257 +119,299 @@ export function createApi(db: DB) {
 
   /* ---------------------------------------------------------- accounts --- */
 
-  api.get('/accounts', (c) =>
-    c.json(listAccountBalances(db, c.req.query('includeDeleted') === 'true')),
+  api.get('/accounts', async (c) =>
+    c.json(await listAccountBalances(c.env.DB, c.req.query('includeDeleted') === 'true')),
   )
 
   api.post('/accounts', async (c) => {
+    const db = c.env.DB
     const input = await body(c, accountInputSchema)
     const id = newId()
-    db.prepare(
-      `INSERT INTO accounts (id, name, icon, initialBalanceCents, sortOrder)
-       VALUES (@id, @name, @icon, @initialBalanceCents, @sortOrder)`,
-    ).run({ id, ...input })
-    return c.json(found(db.prepare('SELECT * FROM accountBalances WHERE id = ?').get(id), 'Account'), 201)
+    await db
+      .prepare(
+        `INSERT INTO accounts (id, name, icon, initialBalanceCents, sortOrder)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .bind(id, input.name, input.icon, input.initialBalanceCents, input.sortOrder)
+      .run()
+    return c.json(
+      found(await db.prepare('SELECT * FROM accountBalances WHERE id = ?').bind(id).first(), 'Account'),
+      201,
+    )
   })
 
   api.patch('/accounts/:id', async (c) => {
+    const db = c.env.DB
     const id = c.req.param('id')
     const input = await body(c, accountInputSchema.partial())
-    found(db.prepare('SELECT id FROM accounts WHERE id = ?').get(id), 'Account')
-    const fields = Object.keys(input) as (keyof typeof input)[]
-    if (fields.length) {
-      db.prepare(
-        `UPDATE accounts SET ${fields.map((f) => `${f} = @${f}`).join(', ')} WHERE id = @id`,
-      ).run({ id, ...input })
+    found(await db.prepare('SELECT id FROM accounts WHERE id = ?').bind(id).first(), 'Account')
+    const { sql, values } = setClause(input)
+    if (values.length) {
+      await db.prepare(`UPDATE accounts SET ${sql} WHERE id = ?`).bind(...values, id).run()
     }
-    return c.json(db.prepare('SELECT * FROM accountBalances WHERE id = ?').get(id))
+    return c.json(await db.prepare('SELECT * FROM accountBalances WHERE id = ?').bind(id).first())
   })
 
   // Soft delete: history keeps rendering, the account leaves every picker.
-  api.delete('/accounts/:id', (c) => {
+  api.delete('/accounts/:id', async (c) => {
+    const db = c.env.DB
     const id = c.req.param('id')
-    found(db.prepare('SELECT id FROM accounts WHERE id = ?').get(id), 'Account')
-    db.prepare('UPDATE accounts SET deletedAt = ? WHERE id = ?').run(nowIso(), id)
-    db.prepare('UPDATE recurringRules SET isActive = 0 WHERE accountId = ?').run(id)
+    found(await db.prepare('SELECT id FROM accounts WHERE id = ?').bind(id).first(), 'Account')
+    await db.prepare('UPDATE accounts SET deletedAt = ? WHERE id = ?').bind(nowIso(), id).run()
+    await db.prepare('UPDATE recurringRules SET isActive = 0 WHERE accountId = ?').bind(id).run()
     return c.json({ ok: true })
   })
 
-  api.post('/accounts/:id/restore', (c) => {
+  api.post('/accounts/:id/restore', async (c) => {
+    const db = c.env.DB
     const id = c.req.param('id')
-    found(db.prepare('SELECT id FROM accounts WHERE id = ?').get(id), 'Account')
-    db.prepare('UPDATE accounts SET deletedAt = NULL WHERE id = ?').run(id)
+    found(await db.prepare('SELECT id FROM accounts WHERE id = ?').bind(id).first(), 'Account')
+    await db.prepare('UPDATE accounts SET deletedAt = NULL WHERE id = ?').bind(id).run()
     return c.json({ ok: true })
   })
 
   /* -------------------------------------------------------- categories --- */
 
-  api.get('/categories', (c) => {
+  api.get('/categories', async (c) => {
+    const db = c.env.DB
     const kind = c.req.query('kind')
     const includeDeleted = c.req.query('includeDeleted') === 'true'
     const where: string[] = []
+    const params: unknown[] = []
     if (!includeDeleted) where.push('deletedAt IS NULL')
-    if (kind === 'expense' || kind === 'income') where.push(`kind = '${kind}'`)
-    return c.json(
-      db
-        .prepare(
-          `SELECT * FROM categories
-           ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-           ORDER BY sortOrder, name`,
-        )
-        .all(),
-    )
+    if (kind === 'expense' || kind === 'income') {
+      where.push('kind = ?')
+      params.push(kind)
+    }
+    const { results } = await db
+      .prepare(
+        `SELECT * FROM categories
+         ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+         ORDER BY sortOrder, name`,
+      )
+      .bind(...params)
+      .all()
+    return c.json(results)
   })
 
   api.post('/categories', async (c) => {
+    const db = c.env.DB
     const input = await body(c, categoryInputSchema)
     const id = newId()
-    db.prepare(
-      `INSERT INTO categories (id, name, icon, kind, color, sortOrder)
-       VALUES (@id, @name, @icon, @kind, @color, @sortOrder)`,
-    ).run({ id, ...input, color: input.color ?? null })
-    return c.json(db.prepare('SELECT * FROM categories WHERE id = ?').get(id), 201)
+    await db
+      .prepare(
+        `INSERT INTO categories (id, name, icon, kind, color, sortOrder)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .bind(id, input.name, input.icon, input.kind, input.color ?? null, input.sortOrder)
+      .run()
+    return c.json(await db.prepare('SELECT * FROM categories WHERE id = ?').bind(id).first(), 201)
   })
 
   api.patch('/categories/:id', async (c) => {
+    const db = c.env.DB
     const id = c.req.param('id')
     const input = await body(c, categoryInputSchema.partial().omit({ kind: true }))
-    found(db.prepare('SELECT id FROM categories WHERE id = ?').get(id), 'Category')
-    const fields = Object.keys(input) as (keyof typeof input)[]
-    if (fields.length) {
-      db.prepare(
-        `UPDATE categories SET ${fields.map((f) => `${f} = @${f}`).join(', ')} WHERE id = @id`,
-      ).run({ id, ...input })
+    found(await db.prepare('SELECT id FROM categories WHERE id = ?').bind(id).first(), 'Category')
+    const { sql, values } = setClause(input)
+    if (values.length) {
+      await db.prepare(`UPDATE categories SET ${sql} WHERE id = ?`).bind(...values, id).run()
     }
-    return c.json(db.prepare('SELECT * FROM categories WHERE id = ?').get(id))
+    return c.json(await db.prepare('SELECT * FROM categories WHERE id = ?').bind(id).first())
   })
 
-  api.delete('/categories/:id', (c) => {
+  api.delete('/categories/:id', async (c) => {
+    const db = c.env.DB
     const id = c.req.param('id')
-    found(db.prepare('SELECT id FROM categories WHERE id = ?').get(id), 'Category')
-    db.prepare('UPDATE categories SET deletedAt = ? WHERE id = ?').run(nowIso(), id)
-    db.prepare('DELETE FROM budgets WHERE categoryId = ?').run(id)
-    db.prepare('UPDATE recurringRules SET isActive = 0 WHERE categoryId = ?').run(id)
+    found(await db.prepare('SELECT id FROM categories WHERE id = ?').bind(id).first(), 'Category')
+    await db.prepare('UPDATE categories SET deletedAt = ? WHERE id = ?').bind(nowIso(), id).run()
+    await db.prepare('DELETE FROM budgets WHERE categoryId = ?').bind(id).run()
+    await db.prepare('UPDATE recurringRules SET isActive = 0 WHERE categoryId = ?').bind(id).run()
     return c.json({ ok: true })
   })
 
-  api.post('/categories/:id/restore', (c) => {
+  api.post('/categories/:id/restore', async (c) => {
+    const db = c.env.DB
     const id = c.req.param('id')
-    found(db.prepare('SELECT id FROM categories WHERE id = ?').get(id), 'Category')
-    db.prepare('UPDATE categories SET deletedAt = NULL WHERE id = ?').run(id)
+    found(await db.prepare('SELECT id FROM categories WHERE id = ?').bind(id).first(), 'Category')
+    await db.prepare('UPDATE categories SET deletedAt = NULL WHERE id = ?').bind(id).run()
     return c.json({ ok: true })
   })
 
   /* ------------------------------------------------------ transactions --- */
 
-  api.get('/transactions', (c) => c.json(listTransactions(db, query(c, transactionQuerySchema))))
+  api.get('/transactions', async (c) =>
+    c.json(await listTransactions(c.env.DB, query(c, transactionQuerySchema))),
+  )
 
   api.post('/transactions', async (c) => {
+    const db = c.env.DB
     const input = await body(c, transactionInputSchema)
-    assertAccountLive(db, input.accountId)
-    assertCategoryKind(db, input.categoryId, input.kind)
+    await assertAccountLive(db, input.accountId)
+    await assertCategoryKind(db, input.categoryId, input.kind)
     const id = newId()
-    db.prepare(
-      `INSERT INTO transactions (id, kind, occurredOn, amountCents, accountId, categoryId, name, icon)
-       VALUES (@id, @kind, @occurredOn, @amountCents, @accountId, @categoryId, @name, @icon)`,
-    ).run({
-      id,
-      ...input,
-      categoryId: input.categoryId ?? null,
-      name: input.name ?? null,
-      icon: input.icon ?? null,
-    })
-    return c.json(getTransactionRow(db, id), 201)
+    await db
+      .prepare(
+        `INSERT INTO transactions (id, kind, occurredOn, amountCents, accountId, categoryId, name, icon)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .bind(
+        id,
+        input.kind,
+        input.occurredOn,
+        input.amountCents,
+        input.accountId,
+        input.categoryId ?? null,
+        input.name ?? null,
+        input.icon ?? null,
+      )
+      .run()
+    return c.json(await getTransactionRow(db, id), 201)
   })
 
   api.patch('/transactions/:id', async (c) => {
+    const db = c.env.DB
     const id = c.req.param('id')
     const existing = found(
-      db.prepare('SELECT * FROM transactions WHERE id = ?').get(id) as
-        | { kind: CategoryKind }
-        | undefined,
+      await db.prepare('SELECT * FROM transactions WHERE id = ?').bind(id).first<{ kind: CategoryKind }>(),
       'Transaction',
     )
     const input = await body(c, transactionInputSchema.partial())
-    if (input.accountId) assertAccountLive(db, input.accountId)
-    assertCategoryKind(db, input.categoryId, input.kind ?? existing.kind)
-    const fields = Object.keys(input) as (keyof typeof input)[]
-    if (fields.length) {
-      db.prepare(
-        `UPDATE transactions SET ${fields.map((f) => `${f} = @${f}`).join(', ')} WHERE id = @id`,
-      ).run({ id, ...input })
+    if (input.accountId) await assertAccountLive(db, input.accountId)
+    await assertCategoryKind(db, input.categoryId, input.kind ?? existing.kind)
+    const { sql, values } = setClause(input)
+    if (values.length) {
+      await db.prepare(`UPDATE transactions SET ${sql} WHERE id = ?`).bind(...values, id).run()
     }
-    return c.json(getTransactionRow(db, id))
+    return c.json(await getTransactionRow(db, id))
   })
 
-  api.delete('/transactions/:id', (c) => {
+  api.delete('/transactions/:id', async (c) => {
+    const db = c.env.DB
     const id = c.req.param('id')
-    const result = db.prepare('DELETE FROM transactions WHERE id = ?').run(id)
-    if (!result.changes) throw new HttpError(404, 'Transaction not found')
+    const result = await db.prepare('DELETE FROM transactions WHERE id = ?').bind(id).run()
+    if (!result.meta.changes) throw new HttpError(404, 'Transaction not found')
     return c.json({ ok: true })
   })
 
   /* ---------------------------------------------------------- transfers -- */
 
-  api.get('/transfers', (c) => c.json(listTransfers(db, query(c, transferQuerySchema))))
+  api.get('/transfers', async (c) =>
+    c.json(await listTransfers(c.env.DB, query(c, transferQuerySchema))),
+  )
 
   api.post('/transfers', async (c) => {
+    const db = c.env.DB
     const input = await body(c, transferInputSchema)
-    assertAccountLive(db, input.fromAccountId)
-    assertAccountLive(db, input.toAccountId)
+    await assertAccountLive(db, input.fromAccountId)
+    await assertAccountLive(db, input.toAccountId)
     const id = newId()
-    db.prepare(
-      `INSERT INTO transfers (id, occurredOn, amountCents, fromAccountId, toAccountId, note)
-       VALUES (@id, @occurredOn, @amountCents, @fromAccountId, @toAccountId, @note)`,
-    ).run({ id, ...input, note: input.note ?? null })
-    return c.json(getTransferRow(db, id), 201)
+    await db
+      .prepare(
+        `INSERT INTO transfers (id, occurredOn, amountCents, fromAccountId, toAccountId, note)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .bind(id, input.occurredOn, input.amountCents, input.fromAccountId, input.toAccountId, input.note ?? null)
+      .run()
+    return c.json(await getTransferRow(db, id), 201)
   })
 
   api.patch('/transfers/:id', async (c) => {
+    const db = c.env.DB
     const id = c.req.param('id')
-    found(db.prepare('SELECT id FROM transfers WHERE id = ?').get(id), 'Transfer')
+    found(await db.prepare('SELECT id FROM transfers WHERE id = ?').bind(id).first(), 'Transfer')
     const input = await body(c, transferInputBaseSchema.partial())
-    const fields = Object.keys(input)
-    if (fields.includes('fromAccountId') && fields.includes('toAccountId')) {
+    if (input.fromAccountId !== undefined && input.toAccountId !== undefined) {
       if (input.fromAccountId === input.toAccountId) {
         throw new HttpError(400, 'Pick two different accounts')
       }
     }
-    if (fields.length) {
-      db.prepare(
-        `UPDATE transfers SET ${fields.map((f) => `${f} = @${f}`).join(', ')} WHERE id = @id`,
-      ).run({ id, ...input })
+    const { sql, values } = setClause(input)
+    if (values.length) {
+      await db.prepare(`UPDATE transfers SET ${sql} WHERE id = ?`).bind(...values, id).run()
     }
-    return c.json(getTransferRow(db, id))
+    return c.json(await getTransferRow(db, id))
   })
 
-  api.delete('/transfers/:id', (c) => {
+  api.delete('/transfers/:id', async (c) => {
+    const db = c.env.DB
     const id = c.req.param('id')
-    const result = db.prepare('DELETE FROM transfers WHERE id = ?').run(id)
-    if (!result.changes) throw new HttpError(404, 'Transfer not found')
+    const result = await db.prepare('DELETE FROM transfers WHERE id = ?').bind(id).run()
+    if (!result.meta.changes) throw new HttpError(404, 'Transfer not found')
     return c.json({ ok: true })
   })
 
   /* ----------------------------------------------------------- budgets --- */
 
-  api.get('/budgets', (c) => c.json(budgetStatus(db, requireMonth(c))))
+  api.get('/budgets', async (c) => c.json(await budgetStatus(c.env.DB, requireMonth(c))))
 
   api.put('/budgets', async (c) => {
+    const db = c.env.DB
     const input = await body(c, budgetInputSchema)
-    db.prepare(
-      `INSERT INTO budgets (id, categoryId, amountCents)
-       VALUES (@id, @categoryId, @amountCents)
-       ON CONFLICT (categoryId) DO UPDATE
-         SET amountCents = excluded.amountCents, updatedAt = datetime('now')`,
-    ).run({ id: newId(), ...input })
+    await db
+      .prepare(
+        `INSERT INTO budgets (id, categoryId, amountCents)
+         VALUES (?, ?, ?)
+         ON CONFLICT (categoryId) DO UPDATE
+           SET amountCents = excluded.amountCents, updatedAt = datetime('now')`,
+      )
+      .bind(newId(), input.categoryId, input.amountCents)
+      .run()
     return c.json({ ok: true })
   })
 
-  api.delete('/budgets/:categoryId', (c) => {
-    db.prepare('DELETE FROM budgets WHERE categoryId = ?').run(c.req.param('categoryId'))
+  api.delete('/budgets/:categoryId', async (c) => {
+    await c.env.DB.prepare('DELETE FROM budgets WHERE categoryId = ?').bind(c.req.param('categoryId')).run()
     return c.json({ ok: true })
   })
 
   /* --------------------------------------------------------- recurring --- */
 
-  api.get('/recurring', (c) =>
-    c.json(
-      db
-        .prepare(
-          `SELECT r.*,
-                  a.name AS accountName, a.icon AS accountIcon,
-                  c.name AS categoryName, c.icon AS categoryIcon
-           FROM recurringRules r
-           JOIN accounts a ON a.id = r.accountId
-           LEFT JOIN categories c ON c.id = r.categoryId
-           WHERE r.deletedAt IS NULL
-           ORDER BY r.isActive DESC, r.nextRunOn`,
-        )
-        .all(),
-    ),
-  )
+  api.get('/recurring', async (c) => {
+    const { results } = await c.env.DB
+      .prepare(
+        `SELECT r.*,
+                a.name AS accountName, a.icon AS accountIcon,
+                c.name AS categoryName, c.icon AS categoryIcon
+         FROM recurringRules r
+         JOIN accounts a ON a.id = r.accountId
+         LEFT JOIN categories c ON c.id = r.categoryId
+         WHERE r.deletedAt IS NULL
+         ORDER BY r.isActive DESC, r.nextRunOn`,
+      )
+      .all()
+    return c.json(results)
+  })
 
   api.post('/recurring', async (c) => {
+    const db = c.env.DB
     const input = await body(c, recurringRuleInputSchema)
-    assertAccountLive(db, input.accountId)
-    assertCategoryKind(db, input.categoryId, input.kind)
+    await assertAccountLive(db, input.accountId)
+    await assertCategoryKind(db, input.categoryId, input.kind)
     const id = newId()
-    db.prepare(
-      `INSERT INTO recurringRules
-         (id, kind, amountCents, accountId, categoryId, name, frequency,
-          intervalCount, startDate, endDate, occurrenceIndex, nextRunOn, isActive)
-       VALUES (@id, @kind, @amountCents, @accountId, @categoryId, @name, @frequency,
-               @intervalCount, @startDate, @endDate, 0, @nextRunOn, @isActive)`,
-    ).run({
-      id,
-      ...input,
-      categoryId: input.categoryId ?? null,
-      name: input.name ?? null,
-      endDate: input.endDate ?? null,
-      nextRunOn: input.startDate,
-      isActive: input.isActive === false ? 0 : 1,
-    })
-    return c.json(db.prepare('SELECT * FROM recurringRules WHERE id = ?').get(id), 201)
+    await db
+      .prepare(
+        `INSERT INTO recurringRules
+           (id, kind, amountCents, accountId, categoryId, name, frequency,
+            intervalCount, startDate, endDate, occurrenceIndex, nextRunOn, isActive)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+      )
+      .bind(
+        id,
+        input.kind,
+        input.amountCents,
+        input.accountId,
+        input.categoryId ?? null,
+        input.name ?? null,
+        input.frequency,
+        input.intervalCount,
+        input.startDate,
+        input.endDate ?? null,
+        input.startDate,
+        input.isActive === false ? 0 : 1,
+      )
+      .run()
+    return c.json(await db.prepare('SELECT * FROM recurringRules WHERE id = ?').bind(id).first(), 201)
   })
 
   /*
@@ -364,23 +420,25 @@ export function createApi(db: DB) {
    * `occurrenceIndex` to the first occurrence that has not yet been posted.
    */
   api.patch('/recurring/:id', async (c) => {
+    const db = c.env.DB
     const id = c.req.param('id')
     const existing = found(
-      db.prepare('SELECT * FROM recurringRules WHERE id = ?').get(id) as
-        | {
-            kind: CategoryKind
-            startDate: string
-            frequency: Frequency
-            intervalCount: number
-            lastPostedOn: string | null
-            occurrenceIndex: number
-          }
-        | undefined,
+      await db
+        .prepare('SELECT * FROM recurringRules WHERE id = ?')
+        .bind(id)
+        .first<{
+          kind: CategoryKind
+          startDate: string
+          frequency: Frequency
+          intervalCount: number
+          lastPostedOn: string | null
+          occurrenceIndex: number
+        }>(),
       'Recurring rule',
     )
     const input = await body(c, recurringRuleInputBaseSchema.partial())
-    if (input.accountId) assertAccountLive(db, input.accountId)
-    assertCategoryKind(db, input.categoryId, input.kind ?? existing.kind)
+    if (input.accountId) await assertAccountLive(db, input.accountId)
+    await assertCategoryKind(db, input.categoryId, input.kind ?? existing.kind)
 
     const patch: Record<string, unknown> = { ...input }
     if (input.isActive !== undefined) patch.isActive = input.isActive ? 1 : 0
@@ -405,46 +463,47 @@ export function createApi(db: DB) {
       patch.nextRunOn = occurrenceDate(startDate, frequency, intervalCount, index)
     }
 
-    const fields = Object.keys(patch)
-    if (fields.length) {
-      db.prepare(
-        `UPDATE recurringRules SET ${fields.map((f) => `${f} = @${f}`).join(', ')} WHERE id = @id`,
-      ).run({ id, ...patch })
+    const { sql, values } = setClause(patch)
+    if (values.length) {
+      await db.prepare(`UPDATE recurringRules SET ${sql} WHERE id = ?`).bind(...values, id).run()
     }
-    return c.json(db.prepare('SELECT * FROM recurringRules WHERE id = ?').get(id))
+    return c.json(await db.prepare('SELECT * FROM recurringRules WHERE id = ?').bind(id).first())
   })
 
   // Stops future postings; everything already posted stays in history.
-  api.delete('/recurring/:id', (c) => {
+  api.delete('/recurring/:id', async (c) => {
+    const db = c.env.DB
     const id = c.req.param('id')
-    found(db.prepare('SELECT id FROM recurringRules WHERE id = ?').get(id), 'Recurring rule')
-    db.prepare('UPDATE recurringRules SET deletedAt = ?, isActive = 0 WHERE id = ?').run(
-      nowIso(),
-      id,
-    )
+    found(await db.prepare('SELECT id FROM recurringRules WHERE id = ?').bind(id).first(), 'Recurring rule')
+    await db
+      .prepare('UPDATE recurringRules SET deletedAt = ?, isActive = 0 WHERE id = ?')
+      .bind(nowIso(), id)
+      .run()
     return c.json({ ok: true })
   })
 
   /* --------------------------------------------------------- analytics --- */
 
-  api.get('/analytics/summary', (c) => c.json(dashboardSummary(db, requireMonth(c), today())))
-  api.get('/analytics/net-worth', (c) => c.json(netWorthSeries(db)))
+  api.get('/analytics/summary', async (c) =>
+    c.json(await dashboardSummary(c.env.DB, requireMonth(c), today())),
+  )
+  api.get('/analytics/net-worth', async (c) => c.json(await netWorthSeries(c.env.DB)))
 
-  api.get('/analytics/monthly', (c) => {
+  api.get('/analytics/monthly', async (c) => {
     const months = Math.min(Math.max(Number(c.req.query('months') ?? 12), 1), 60)
-    return c.json(monthlyTotals(db, months, requireMonth(c)))
+    return c.json(await monthlyTotals(c.env.DB, months, requireMonth(c)))
   })
 
-  api.get('/analytics/by-category', (c) => {
+  api.get('/analytics/by-category', async (c) => {
     const kind = c.req.query('kind') === 'income' ? 'income' : 'expense'
-    return c.json(totalsByCategory(db, requireMonth(c), kind))
+    return c.json(await totalsByCategory(c.env.DB, requireMonth(c), kind))
   })
 
-  api.get('/analytics/budget-status', (c) => c.json(budgetStatus(db, requireMonth(c))))
+  api.get('/analytics/budget-status', async (c) => c.json(await budgetStatus(c.env.DB, requireMonth(c))))
 
   /* -------------------------------------------------------------- jobs --- */
 
-  api.post('/jobs/run', (c) => c.json(runJobs(db)))
+  api.post('/jobs/run', async (c) => c.json(await runJobs(c.env.DB)))
 
   api.get('/health', (c) => c.json({ ok: true, today: today() }))
 

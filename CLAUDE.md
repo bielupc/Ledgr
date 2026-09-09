@@ -9,26 +9,31 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```
-npm run dev          # API (tsx watch, :5174) + Vite (:5173) together; Vite proxies /api
-npm run build        # tsc -b && vite build
-npm start            # production: one process serves the API and dist/
-npm run lint         # oxlint
-npm run typecheck    # tsc -b --noEmit
-npm test             # vitest run
+npm run dev           # Worker (wrangler dev, local D1, :8787) + Vite (:5173) together; Vite proxies /api
+npm run build         # tsc -b && vite build
+npm run deploy:api     # wrangler deploy — the Hono API + D1, to Workers
+npm run deploy:web     # build, then wrangler pages deploy dist — the frontend, to Pages
+npm run lint          # oxlint
+npm run typecheck     # tsc -b --noEmit
+npm test              # vitest run — inside the Workers runtime, real D1 binding
 npx vitest run tests/ledger.test.ts -t "is idempotent"   # a single test
-npm run db:reset             # wipe, migrate, seed ~8 months of demo data
+npm run db:migrate           # apply pending migrations to local D1
+npm run db:migrate:remote    # apply pending migrations to the deployed D1 database
+npm run db:reset             # wipe local D1, migrate, seed ~8 months of demo data
 npm run db:reset -- --empty  # wipe and migrate only — for checking empty states
-npm run icons        # regenerate PWA icons from the grid mark
+npm run icons         # regenerate PWA icons from the grid mark
 ```
 
-`LEDGR_DB` overrides the database path (tests use `:memory:`).
+Local dev runs against D1 too (Wrangler's local emulation, persisted at
+`.wrangler/state`), not a separate Node driver — one code path, so dev never
+runs anything production doesn't.
 
 ## Product shape
 
 Single-user personal expense tracker. Web app now, PWA for mobile later.
 
 - **Phase 1 is desktop-only.** Build PWA infrastructure now (manifest, service worker registration, installability) but no mobile-specific layouts or input flows.
-- **No authentication, no RLS.** Schema comments must flag that this needs revisiting before any multi-user or public deployment.
+- **No authentication, no RLS in the app itself.** Still single-user by design — don't add a login screen or per-row ownership. Now that the app is deployed on Pages/Workers rather than run locally, the gate is **Cloudflare Access** (a dashboard policy in front of the Pages domain and the Worker route, free tier), not application code. Schema comments should still flag the no-RLS assumption for anyone who does turn this multi-user later.
 - **Single currency: EUR (€).** No conversion logic. (The brand guidelines mockup shows `$` — ignore that; it predates the currency decision.)
 - Top priority is that it feels smooth, polished and snappy. Revolut and similar fintech apps are the reference for visual language and interaction patterns.
 
@@ -45,26 +50,40 @@ The division of labor between UI libraries is deliberate — respect it rather t
 - **TanStack Table** — the filterable monthly tables. Virtualization is deferred until row counts justify it.
 - **zod** — `shared/schemas.ts` validates on the server and types the client. Simple dialogs use local state; reach for react-hook-form when a form outgrows it.
 - **cmdk** — command palette (⌘K / Ctrl+K) plus a visible trigger button.
-- **better-sqlite3 + Hono** — local API over `data/ledgr.db`.
+- **Hono on Cloudflare Workers + D1** — the API is a Worker (`server/index.ts`); Pages serves the built frontend. Pages and the Worker are different origins — Pages' `_redirects` can only rewrite to relative paths, it cannot proxy to an external one — so the client calls the Worker's URL directly (`src/lib/api.ts`, `VITE_API_URL`) and the Worker allows it with CORS.
 
 `prefers-reduced-motion` must be respected throughout; this UI is animation-heavy enough that ignoring it is a real accessibility failure.
 
 ## Architecture
 
 ```
-data/ledgr.db   <- better-sqlite3 (sync, WAL)
-server/         <- Hono; api.ts routes, queries.ts SQL, jobs.ts scheduler
+wrangler.toml   <- Worker + D1 binding (DB) + Cron Trigger for jobs.ts
+server/         <- Hono, on Workers; api.ts routes, queries.ts SQL, jobs.ts scheduler
+scripts/        <- Node-side tooling (db-reset, db-seed) — real D1 via wrangler's getPlatformProxy
 shared/         <- zod schemas + types, imported by BOTH sides
-src/            <- React 19, TanStack Query
+src/            <- React 19, TanStack Query; deploys to Pages
 ```
 
-Server code uses **relative imports** (`../shared/…`) because tsx does not resolve the `@shared` alias from the solution-style root tsconfig; only client code, bundled by Vite, uses `@/` and `@shared/`.
+D1 is **async and positional-only** (`db.prepare(sql).bind(...).all()` — no
+`@name` params, unlike better-sqlite3) and has **no imperative
+`db.transaction(fn)`**: atomicity comes from collecting bound statements and
+calling `db.batch([...])` once (see `jobs.ts`'s `postDueRecurring`). Keep
+that shape rather than reaching for a per-statement transaction wrapper that
+doesn't exist here.
+
+`server/**` is typechecked against `@cloudflare/workers-types` only (see
+`tsconfig.worker.json`) — no Node globals (`process`, `fs`, ...) exist at
+runtime there. `scripts/**` shares that project (plus `"node"` types) because
+`db-reset.ts`/`db-seed.ts` import `server/db.ts` and `server/jobs.ts`
+directly; `tsconfig.node.json` covers everything else Node-side.
+
+Server code uses **relative imports** (`../shared/…`) because tsx/Wrangler do not resolve the `@shared` alias from the solution-style root tsconfig; only client code, bundled by Vite, uses `@/` and `@shared/`.
 
 Three conventions worth knowing before editing:
 
 - **Money is `INTEGER` cents everywhere.** SQLite has no exact decimal type. Convert only at the display edge, via `src/lib/format.ts`.
 - **Columns are camelCase**, so a row deserialises straight into the API shape and there is no mapping layer to drift.
-- **Migrations** are `migrations/NNN_*.sql`, applied in filename order against `PRAGMA user_version` by `server/migrate.ts`. Add files; never edit an applied one.
+- **Migrations** are `migrations/NNNN_*.sql` (Wrangler's 4-digit convention), applied via `wrangler d1 migrations apply` (see Commands above) rather than a hand-rolled runner. Add files; never edit an applied one.
 
 ## Data model
 

@@ -1,0 +1,37 @@
+{
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.worker.tsbuildinfo",
+    "target": "es2023",
+    "lib": ["ES2023"],
+    "module": "esnext",
+    // `scripts/**` shares this project rather than tsconfig.node.json's,
+    // because it imports server/db.ts and server/jobs.ts directly (for
+    // db-reset/db-seed) — under `tsc -b`, an unreferenced cross-project
+    // import gets checked in the *importing* project's type environment, not
+    // the imported file's own, so D1Database resolved to nothing when scripts
+    // (Node-only types) reached into server/ from the other tsconfig. Both
+    // type sets together here is the trade: server/** loses the guarantee
+    // that a stray Node import would be caught at typecheck time, in exchange
+    // for scripts/** and server/** sharing one real program instead of two
+    // that disagree about what server/** even is.
+    "types": ["@cloudflare/workers-types", "node"],
+    "skipLibCheck": true,
+
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "paths": {
+      "@shared/*": ["./shared/*"]
+    }
+  },
+  "include": ["server", "scripts"]
+}
