@@ -134,9 +134,8 @@ export async function listTransactions(
   const direction = query.dir === 'asc' ? 'ASC' : 'DESC'
 
   /*
-   * The page and its aggregates ride in one `db.batch()`. They must see the
-   * same rows — a footer fetched separately can disagree with the page above
-   * it — and D1 has no transaction wrapper to hold them together otherwise.
+   * The page and its count ride in one `db.batch()`: they must see the same
+   * rows, and D1 has no transaction wrapper to hold them together otherwise.
    */
   const [page, totals] = await db.batch<never>([
     db
@@ -151,17 +150,16 @@ export async function listTransactions(
       .bind(...params, query.limit, query.offset),
     db
       .prepare(
-        `SELECT count(*) AS total, coalesce(sum(t.amountCents), 0) AS totalCents ${from}`,
+        `SELECT count(*) AS total ${from}`,
       )
       .bind(...params),
   ])
 
-  const aggregate = (totals!.results as unknown as { total: number; totalCents: number }[])[0]
+  const counted = (totals!.results as unknown as { total: number }[])[0]
 
   return {
     rows: page!.results as unknown as TransactionRow[],
-    total: aggregate?.total ?? 0,
-    totalCents: aggregate?.totalCents ?? 0,
+    total: counted?.total ?? 0,
   }
 }
 
@@ -244,17 +242,16 @@ export async function listTransfers(db: DB, query: TransferQuery): Promise<Page<
       .bind(...params, query.limit, query.offset),
     db
       .prepare(
-        `SELECT count(*) AS total, coalesce(sum(r.amountCents), 0) AS totalCents ${from}`,
+        `SELECT count(*) AS total ${from}`,
       )
       .bind(...params),
   ])
 
-  const aggregate = (totals!.results as unknown as { total: number; totalCents: number }[])[0]
+  const counted = (totals!.results as unknown as { total: number }[])[0]
 
   return {
     rows: page!.results as unknown as TransferRow[],
-    total: aggregate?.total ?? 0,
-    totalCents: aggregate?.totalCents ?? 0,
+    total: counted?.total ?? 0,
   }
 }
 

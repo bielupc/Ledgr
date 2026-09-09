@@ -71,12 +71,8 @@ export function useOptimisticRows<Row, Variables>(
 
 /**
  * The same, for a paginated list. The caller writes one row patch and it is
- * lifted over `page.rows`; `total` follows the row-count delta so the footer
+ * lifted over `page.rows`; `total` follows the row-count delta so the pager
  * does not lag a create by a whole round-trip.
- *
- * `totalCents` is deliberately left alone. Correcting it optimistically would
- * mean every mutation handing over a signed amount delta, and `onSettled`
- * refetches the true figure a moment later either way.
  */
 export function useOptimisticPage<Row, Variables>(
   scope: QueryKey,

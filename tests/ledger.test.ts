@@ -169,7 +169,7 @@ function listQuery(overrides: Partial<TransactionQuery> = {}): TransactionQuery 
 }
 
 describe('paginated lists', () => {
-  it('pages without moving the aggregates off the whole filter', async () => {
+  it('pages without moving the count off the whole filter', async () => {
     for (let day = 1; day <= 5; day += 1) {
       await addTransaction('expense', `2026-03-0${day}`, day * 1_000, current, groceries)
     }
@@ -177,26 +177,24 @@ describe('paginated lists', () => {
     const first = await listTransactions(db, listQuery({ month: '2026-03', limit: 2 }))
     expect(first.rows).toHaveLength(2)
     expect(first.total).toBe(5)
-    expect(first.totalCents).toBe(15_000)
 
     const second = await listTransactions(db, listQuery({ month: '2026-03', limit: 2, offset: 2 }))
     expect(second.rows).toHaveLength(2)
-    // Same aggregates, different rows: the footer describes the filter, not the page.
+    // Same count, different rows: `total` describes the filter, not the page.
     expect(second.total).toBe(5)
-    expect(second.totalCents).toBe(15_000)
     expect(second.rows.map((r) => r.id)).not.toEqual(first.rows.map((r) => r.id))
 
     const last = await listTransactions(db, listQuery({ month: '2026-03', limit: 2, offset: 4 }))
     expect(last.rows).toHaveLength(1)
   })
 
-  it('counts and sums only what the filter selects', async () => {
+  it('counts only what the filter selects', async () => {
     await addTransaction('expense', '2026-03-02', 4_000, current, groceries)
     await addTransaction('expense', '2026-03-03', 6_000, savings, groceries)
 
     const page = await listTransactions(db, listQuery({ month: '2026-03', accountId: savings }))
     expect(page.total).toBe(1)
-    expect(page.totalCents).toBe(6_000)
+    expect(page.rows).toHaveLength(1)
   })
 
   it('orders on the server, across pages', async () => {

@@ -30,8 +30,6 @@ interface DataTableProps<T extends RowData> {
     total: number
     onPageChange: (page: number) => void
   }
-  /** Aggregate for the whole filter, shown in the footer beside the pager. */
-  summary?: React.ReactNode
   rowKey: (row: T) => string
   /* Below `md` the table is replaced by this, per row. Six columns cannot share
      390px — `table-fixed` makes them overlap rather than overflow, so the
@@ -50,7 +48,6 @@ export function DataTable<T extends RowData>({
   sorting,
   onSortingChange,
   pagination,
-  summary,
   rowKey,
   mobileRow,
 }: DataTableProps<T>) {
@@ -174,45 +171,41 @@ export function DataTable<T extends RowData>({
       </table>
       </div>
 
-      {(summary || pagination) && (
+      {pagination && (
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-3 py-2.5">
           <p className="label-mono text-muted-foreground">
-            {pagination
-              ? `${first}–${last} of ${pagination.total}`
-              : `${data.length} row${data.length === 1 ? '' : 's'}`}
-            {summary != null && <span className="text-foreground">{' · '}{summary}</span>}
+            {first}–{last} of {pagination.total}
           </p>
 
           {/* Always mounted, disabled at the bounds: a control that appears only
               on the months long enough to overflow makes the footer jump as you
               step through them, and hides where paging lives. */}
-          {pagination && (
-            <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Previous page"
-                disabled={pagination.page <= 1}
-                onClick={() => pagination.onPageChange(pagination.page - 1)}
-              >
-                <ChevronLeft className="size-4" strokeWidth={2.25} />
-              </Button>
-              <span className="label-mono px-1 tabular-nums text-muted-foreground">
-                {pagination.page} / {pageCount}
-              </span>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Next page"
-                disabled={pagination.page >= pageCount}
-                onClick={() => pagination.onPageChange(pagination.page + 1)}
-              >
-                <ChevronRight className="size-4" strokeWidth={2.25} />
-              </Button>
-            </div>
-          )}
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Previous page"
+              disabled={pagination.page <= 1}
+              onClick={() => pagination.onPageChange(pagination.page - 1)}
+            >
+              <ChevronLeft className="size-4" strokeWidth={2.25} />
+            </Button>
+            <span className="label-mono px-1 tabular-nums text-muted-foreground">
+              {pagination.page} / {pageCount}
+            </span>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Next page"
+              disabled={pagination.page >= pageCount}
+              onClick={() => pagination.onPageChange(pagination.page + 1)}
+            >
+              <ChevronRight className="size-4" strokeWidth={2.25} />
+            </Button>
+          </div>
         </div>
       )}
+
     </>
   )
 }

@@ -30,7 +30,7 @@ import { useTransfers, useDeleteTransfer } from '@/features/transfers/hooks'
 import { useQuickActions } from '@/features/quick-actions/QuickActions'
 import { useMonthParam } from '@/hooks/useMonthParam'
 import { useParamState } from '@/hooks/useParamState'
-import { formatDay, formatEuro, formatMonthLong } from '@/lib/format'
+import { formatDay, formatMonthLong } from '@/lib/format'
 import { fadeUp, stagger, transition } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 import type { CategoryKind } from '@shared/schemas.ts'
@@ -345,7 +345,6 @@ export default function Transactions() {
                 total: transfers.data?.total ?? 0,
                 onPageChange: setPage,
               }}
-              summary={formatEuro(transfers.data?.totalCents ?? 0)}
               mobileRow={(row) => (
                 <button
                   type="button"
@@ -403,7 +402,6 @@ export default function Transactions() {
                 total: transactions.data?.total ?? 0,
                 onPageChange: setPage,
               }}
-              summary={formatEuro(transactions.data?.totalCents ?? 0)}
               mobileRow={(row) => (
                 <button
                   type="button"
