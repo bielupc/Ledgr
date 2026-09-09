@@ -98,7 +98,7 @@ export function NetWorthHero({ month }: { month: string }) {
         <EmptyState
           icon={Wallet}
           title="Your net worth starts with an account"
-          description="Add the accounts you actually hold — a current account, savings, cash. Balances roll up here and get snapshotted every month."
+          description=""
           actionLabel="Add your first account"
           onAction={openAccount}
         />

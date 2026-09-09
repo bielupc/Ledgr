@@ -24,7 +24,7 @@ export function BudgetPanel({ month }: { month: string }) {
         <EmptyState
           icon={Target}
           title="No budgets set"
-          description="Give an expense category a monthly limit and its progress shows here. Budgets reset each month; nothing rolls over."
+          description=""
           actionLabel="Set a budget"
           onAction={() => void navigate('/budgets')}
           size="sm"

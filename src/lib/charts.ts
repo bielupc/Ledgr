@@ -15,8 +15,6 @@ export const CHART_TOKENS = [
   '--chart-cat-3',
   '--chart-cat-4',
   '--chart-cat-5',
-  '--chart-cat-6',
-  '--chart-cat-7',
   '--chart-grid',
   '--chart-axis',
   '--foreground',
@@ -31,10 +29,16 @@ export const CHART_TOKENS = [
 
 export type Tokens = Record<string, string>
 
-/** Assigned in fixed order and never cycled: a category keeps its hue when the
- *  set is filtered, and a ninth series folds into "Other". Red, blue and
- *  green are excluded from this arbitrary-category palette — those hues are
- *  reserved for expense, net worth and income respectively. */
+/**
+ * Assigned in fixed order and never cycled: a category keeps its hue when the
+ * set is filtered, and the tail folds into "Other". Red, blue and green are
+ * excluded from this arbitrary-category palette — those hues are reserved for
+ * expense, net worth and income respectively.
+ *
+ * Five, and callers must fold at `length` rather than assume seven: five is
+ * the largest set that can be told apart pairwise once those three hues are
+ * gone. See the token block in `globals.css` for the measurements.
+ */
 export function categoricalPalette(tokens: Tokens): string[] {
   return [
     tokens['--chart-cat-1'],
@@ -42,10 +46,12 @@ export function categoricalPalette(tokens: Tokens): string[] {
     tokens['--chart-cat-3'],
     tokens['--chart-cat-4'],
     tokens['--chart-cat-5'],
-    tokens['--chart-cat-6'],
-    tokens['--chart-cat-7'],
   ].filter(Boolean) as string[]
 }
+
+/** How many slots the categorical palette actually has, so the fold-into-Other
+ *  point is derived rather than repeated as a literal on every surface. */
+export const CATEGORICAL_SLOTS = 5
 
 /**
  * Tokens arrive already resolved to `rgb()` (see `useResolvedTokens`), but the

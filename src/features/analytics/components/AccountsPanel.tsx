@@ -30,8 +30,6 @@ const TONES = [
   'var(--chart-cat-3)',
   'var(--chart-cat-4)',
   'var(--chart-cat-5)',
-  'var(--chart-cat-6)',
-  'var(--chart-cat-7)',
 ]
 const toneFor = (index: number) => TONES[index] ?? 'var(--chart-other)'
 
@@ -64,7 +62,7 @@ export function AccountsPanel() {
         <EmptyState
           icon={Wallet}
           title="No accounts yet"
-          description="Add the accounts you hold and their balances roll into net worth automatically."
+          description=""
           actionLabel="Add an account"
           onAction={openAccount}
           size="sm"

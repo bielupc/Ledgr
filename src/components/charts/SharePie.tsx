@@ -3,13 +3,14 @@ import type { EChartsOption } from 'echarts'
 import { Chart } from '@/components/charts/Chart'
 import { Money } from '@/components/brand/Money'
 import { DynamicIcon } from '@/components/brand/DynamicIcon'
-import { categoricalPalette, type Tokens } from '@/lib/charts'
+import { CATEGORICAL_SLOTS, categoricalPalette, type Tokens } from '@/lib/charts'
 import { formatEuro, percent } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
-/** Seven hues exist, so the tail folds into one grey rather than inventing an
- *  eighth. Matches the chart-palette rule the whole app is held to. */
-const HUES = 7
+/** However many hues the categorical palette actually has: past that the tail
+ *  folds into one grey rather than inventing another. Derived, not a literal,
+ *  because the slot count is a measured property of the palette. */
+const HUES = CATEGORICAL_SLOTS
 
 export interface ShareSlice {
   id: string
@@ -41,7 +42,7 @@ function centreSize(cents: number): string {
 /*
  * A ring paired with its own legend, where the legend rows are the real
  * content and the ring is the proportion read. One component because three
- * surfaces need the same pairing and the fold-at-seven and slot-colour rules
+ * surfaces need the same pairing, and the fold point and slot-colour rules
  * must not drift between them.
  */
 export function SharePie({
@@ -55,10 +56,11 @@ export function SharePie({
 
   const totalCents = slices.reduce((sum, slice) => sum + slice.valueCents, 0)
 
-  // How many rows get a hue of their own. Folding costs the last slot, so the
-  // boundary moves to six once there is an "Other" to draw.
+  // How many rows get a hue of their own. The "Other" wedge wears
+  // `--chart-other`, which is not one of the hues, so folding costs no slot and
+  // every hue goes to a named row.
   const folded = slices.length > HUES
-  const hueCount = folded ? HUES - 1 : slices.length
+  const hueCount = Math.min(slices.length, HUES)
   const toneFor = (index: number) =>
     index < hueCount ? `var(--chart-cat-${index + 1})` : 'var(--chart-other)'
 

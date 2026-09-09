@@ -21,7 +21,9 @@ const NO_ROWS: AccountBalance[] = []
  * The dashboard's palette, keyed the same way: an account's hue comes from its
  * place in the list, so the colour that marks it in the net-worth block marks
  * it here too. Held to a ring and a tint rather than a fill — seven saturated
- * cards would overrun the brand's 78/18/4 proportion on their own.
+ * cards would overrun the brand's 78/18/4 proportion on their own. Past the
+ * fifth account the tone falls back to `--chart-other`, because five is how
+ * many of these hues can be told apart — see the token block in globals.css.
  *
  * `--chart-cat-*`, not `--chart-*`. An account is an arbitrary thing being
  * told apart from other arbitrary things, which is what the category-safe arcs
@@ -36,8 +38,6 @@ const TONES = [
   'var(--chart-cat-3)',
   'var(--chart-cat-4)',
   'var(--chart-cat-5)',
-  'var(--chart-cat-6)',
-  'var(--chart-cat-7)',
 ]
 
 export default function Accounts() {
@@ -86,7 +86,7 @@ export default function Accounts() {
           <EmptyState
             icon={Wallet}
             title="No accounts yet"
-            description="Add the accounts you hold and their balances roll into net worth automatically."
+            description=""
             actionLabel="Add an account"
             onAction={() => open()}
           />

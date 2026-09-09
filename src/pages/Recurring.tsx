@@ -135,7 +135,7 @@ export default function Recurring() {
           <EmptyState
             icon={Repeat}
             title="Nothing repeats yet"
-            description="Set up the entries that arrive every month and they stop being something you remember to type. Anything missed while the app was closed is caught up on the next run."
+            description="Set up the entries that arrive every month and they stop being something you remember to type."
             actionLabel="Create a series"
             onAction={() => open()}
           />

@@ -120,11 +120,7 @@ export function FlowChart({ month, kind }: { month: string; kind: 'income' | 'ex
         <EmptyState
           icon={income ? ArrowUpRight : ArrowDownRight}
           title={income ? 'No income yet' : 'No expenses yet'}
-          description={
-            income
-              ? 'Record what comes in and the monthly trend is drawn here, eight months at a time.'
-              : 'Record what goes out and the monthly trend is drawn here, eight months at a time.'
-          }
+          description={''}
           actionLabel={income ? 'Add income' : 'Add an expense'}
           onAction={() => openTransaction(kind)}
           size="sm"
@@ -202,7 +198,7 @@ export function BalanceChart({ month }: { month: string }) {
         <EmptyState
           icon={Scale}
           title="Nothing to balance yet"
-          description="Your monthly surplus or deficit shows up here as soon as there are entries on both sides."
+          description="Your monthly surplus or deficit shows up here as soon as there are entries on both side."
           size="sm"
         />
       )}

@@ -113,26 +113,37 @@
    * `--positive` and `--transfer` — and a category wearing one reads as a
    * direction it does not have.
    *
-   * That leaves two arcs, warm 48-96 and violet-to-rose 296-344, and the
-   * slots alternate between them so no two neighbours come from the same arc.
-   * Generated in OKLCH at chroma 92% of the sRGB gamut edge, then validated
-   * with the `dataviz` validator against each theme's card surface: lightness
-   * band, chroma floor, CVD adjacency, normal-vision floor and contrast all
-   * pass, worst adjacent pair ΔE 15.6 light / 15.7 dark against a target of 8.
+   * Five slots, not seven, and that count is the whole point. Seven mutually
+   * distinguishable hues do not exist once red, green and blue are spent:
+   * searching the remaining arcs, the best any seven-hue arrangement reaches
+   * is a worst pair of ΔE 7.5 and six reaches 11.1, against a floor of 15 for
+   * "a full-colour reader can tell these apart". The previous seven-slot set
+   * sat at 4.7 / 5.0, which is why two of its oranges read as one colour.
    *
-   * Known and accepted: `--pairs all` fails, because seven hues inside two
-   * arcs cannot all be told apart pairwise. Every surface that spends these
-   * is adjacency-ordered and carries a named, iconed legend, so colour never
-   * carries identity alone. A scatter, bubble or map would break that
-   * assumption and has to re-run the validator with `--pairs all` first.
+   * Five is where it clears. One family each: orange, purple, teal, brown,
+   * pink — deliberately spread across families rather than shaded within two,
+   * so no slot is a near-neighbour of another. Teal is usable despite the note
+   * that hues 180-225 cannot reach the chroma floor; that holds below L 0.58
+   * but not above it, where the gamut opens just far enough (C 0.10-0.12).
+   * Grey is not a candidate at all: a neutral is chroma 0 and can never pass
+   * the floor, which is exactly why it belongs to `--chart-other`.
+   *
+   * Generated in OKLCH under per-family hue, lightness and chroma bounds so
+   * each stays recognisably itself instead of drifting to the arc edges (which
+   * an unconstrained search does, landing on tomato and periwinkle). Validated
+   * with the `dataviz` validator against each theme's card surface, **on
+   * `--pairs all`, not just adjacency**: every check passes, worst pair ΔE 17.1
+   * light / 16.5 dark and worst CVD 9.1 / 9.4 against a target of 8.
+   *
+   * Because the count is the constraint, the fold happens at five everywhere
+   * (`SharePie`, `CategoryDonut`, the account tones). Adding a sixth slot means
+   * redoing this search, not appending a hue.
    */
-  --chart-cat-1: #b56c1c;
-  --chart-cat-2: #994ab0;
-  --chart-cat-3: #9a841d;
-  --chart-cat-4: #663dad;
-  --chart-cat-5: #a14e14;
-  --chart-cat-6: #d05ba5;
-  --chart-cat-7: #9b7019;
+  --chart-cat-1: #cc7617;
+  --chart-cat-2: #64399d;
+  --chart-cat-3: #00a3af;
+  --chart-cat-4: #864912;
+  --chart-cat-5: #b63f84;
 
   --chart-grid: color-mix(in srgb, var(--carbon) 8%, transparent);
   --chart-axis: color-mix(in srgb, var(--carbon) 38%, transparent);
@@ -199,15 +210,15 @@
   --chart-7: #929208;
   --chart-other: #8b9199;
 
-  /* The same arcs and the same slot order, re-stepped about 0.05 lighter in
-     OKLCH for the dark card and re-validated against it. */
-  --chart-cat-1: #c6761f;
-  --chart-cat-2: #a959c1;
-  --chart-cat-3: #a79021;
-  --chart-cat-4: #7750c1;
-  --chart-cat-5: #b65a19;
-  --chart-cat-6: #d963ad;
-  --chart-cat-7: #ab7d1e;
+  /* The same five families and the same slot order, re-stepped for the dark
+     card and re-validated against it on all pairs. Not a uniform lightness
+     shift: brown and purple have to stay dark enough to read as themselves
+     while clearing 3:1 on Carbon, so each family moved by its own amount. */
+  --chart-cat-1: #cc8100;
+  --chart-cat-2: #804db0;
+  --chart-cat-3: #008f85;
+  --chart-cat-4: #985231;
+  --chart-cat-5: #d166bc;
 
   --chart-grid: color-mix(in srgb, var(--paper) 7%, transparent);
   --chart-axis: color-mix(in srgb, var(--paper) 40%, transparent);
@@ -258,8 +269,6 @@
   --color-chart-cat-3: var(--chart-cat-3);
   --color-chart-cat-4: var(--chart-cat-4);
   --color-chart-cat-5: var(--chart-cat-5);
-  --color-chart-cat-6: var(--chart-cat-6);
-  --color-chart-cat-7: var(--chart-cat-7);
 
   --color-carbon: var(--carbon);
   --color-carbon-2: var(--carbon-2);

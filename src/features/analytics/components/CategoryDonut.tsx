@@ -7,26 +7,28 @@ import { EmptyState } from '@/components/empty/EmptyState'
 import { Money } from '@/components/brand/Money'
 import { useCategoryTotals } from '@/features/analytics/hooks'
 import { useQuickActions } from '@/features/quick-actions/QuickActions'
-import { categoricalPalette, type Tokens } from '@/lib/charts'
+import { CATEGORICAL_SLOTS, categoricalPalette, type Tokens } from '@/lib/charts'
 import { formatEuro, percent } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import type { CategoryTotal } from '@shared/types.ts'
 
-const MAX_SLICES = 7
+const MAX_SLICES = CATEGORICAL_SLOTS
 
 const isOther = (row: CategoryTotal) =>
   row.categoryId === null && row.categoryName.startsWith('Other')
 
 /** Same slot rule for the canvas and the HTML legend, so they cannot drift. */
 const colorVar = (index: number, row: CategoryTotal) =>
-  isOther(row) ? 'var(--chart-other)' : `var(--chart-cat-${(index % 7) + 1})`
+  isOther(row) ? 'var(--chart-other)' : `var(--chart-cat-${(index % MAX_SLICES) + 1})`
 
-/** Beyond seven categories the tail folds into "Other" rather than inventing
- *  an eighth hue. */
+/** Beyond the palette's slot count the tail folds into "Other" rather than
+ *  inventing another hue. */
 function foldTail(rows: CategoryTotal[]): CategoryTotal[] {
   if (rows.length <= MAX_SLICES) return rows
-  const head = rows.slice(0, MAX_SLICES - 1)
-  const tail = rows.slice(MAX_SLICES - 1)
+  // `MAX_SLICES` counts hues, not wedges: "Other" wears `--chart-other`, so it
+  // is an extra wedge rather than one of the named slots.
+  const head = rows.slice(0, MAX_SLICES)
+  const tail = rows.slice(MAX_SLICES)
   return [
     ...head,
     {

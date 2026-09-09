@@ -288,11 +288,7 @@ export default function Transactions() {
                       ? 'Nothing matches those filters'
                       : `No transfers in ${formatMonthLong(month)}`
                   }
-                  description={
-                    filtersActive
-                      ? undefined
-                      : 'Moving money between your own accounts leaves the totals alone and shows up here.'
-                  }
+                  description={''}
                   actionLabel={filtersActive ? 'Clear filters' : 'Record a transfer'}
                   onAction={
                     filtersActive
@@ -318,13 +314,7 @@ export default function Transactions() {
                       ? 'Nothing matches those filters'
                       : `No ${NOUNS[view]} in ${formatMonthLong(month)}`
                   }
-                  description={
-                    filtersActive
-                      ? undefined
-                      : view === 'expense'
-                        ? 'Every expense you record lands here, with the name you gave it.'
-                        : 'Salary, refunds and anything else coming in lands here.'
-                  }
+                  description={''}
                   actionLabel={filtersActive ? 'Clear filters' : `Add ${view}`}
                   onAction={
                     filtersActive

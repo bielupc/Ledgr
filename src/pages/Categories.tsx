@@ -136,11 +136,7 @@ function CategoryGroup({
           <EmptyState
             icon={Tags}
             title={`No ${kind} categories`}
-            description={
-              expense
-                ? 'Categories are what the expense breakdown and every budget are built on.'
-                : 'Group what comes in, so the income breakdown has something to say.'
-            }
+            description={''}
             actionLabel="Add a category"
             onAction={onAdd}
             size="sm"

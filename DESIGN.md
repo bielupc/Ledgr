@@ -74,21 +74,31 @@ band, chroma floor, CVD adjacency, normal-vision floor, contrast. **Re-run the v
 any change.** Assign in fixed order, never cycled; an eighth category folds into
 `--chart-other`. Hues 180–225 are unusable, sRGB cannot reach the chroma floor there.
 
-`--chart-cat-1..7` is a second, **category-safe** set, and it is the one every arbitrary-thing
+`--chart-cat-1..5` is a second, **category-safe** set, and it is the one every arbitrary-thing
 encoding uses: the expense and income donuts, the budget ring, the recurring rings, the
 balances share grid and the Accounts cards. Red, green and blue are excluded from it outright,
 because all three are already direction inks (`--negative`, `--positive`, `--transfer`) and a
-category wearing one reads as a direction it does not have. That leaves two arcs, warm 48–96
-and violet-to-rose 296–344, and the slots alternate between them so no neighbour shares an
-arc. Generated in OKLCH at 92% of the sRGB gamut edge and validated against each theme's card
-surface: all five checks pass, worst adjacent pair ΔE 15.6 light / 15.7 dark against a target
-of 8.
+category wearing one reads as a direction it does not have.
 
-**Known and accepted:** `--pairs all` fails on this set — seven hues inside two arcs cannot all
-be told apart pairwise. It is legal here because every surface spending these hues is
-adjacency-ordered and carries a named, iconed legend, so colour never carries identity alone.
-A scatter, bubble or map would break that assumption and must re-run the validator with
-`--pairs all` before using them.
+**Five slots, and the count is the finding, not a preference.** Seven mutually distinguishable
+hues do not exist once those three are spent. Searching the remaining space, the best any
+seven-hue arrangement reaches is a worst pair of ΔE 7.5, and six reaches 11.1, against a floor
+of 15 for "a full-colour reader can tell these apart". The earlier seven-slot set measured 4.7
+light / 5.0 dark, which is why two of its oranges read as one colour. Five is where it clears:
+one family each — **orange, purple, teal, brown, pink** — spread across families rather than
+shaded within two arcs, so no slot is a near-neighbour of another. Validated against each
+theme's card surface **on `--pairs all`, not just adjacency**: every check passes, worst pair
+ΔE 17.1 light / 16.5 dark, worst CVD 9.1 / 9.4 against a target of 8.
+
+Two constraints worth keeping: teal is usable despite the note that hues 180–225 cannot reach
+the chroma floor — that holds below L 0.58 but not above it, where the gamut opens just far
+enough (C 0.10–0.12). Grey is not a candidate at all, since a neutral is chroma 0 and can
+never pass the floor, which is exactly why it belongs to `--chart-other`.
+
+Because the count is the constraint, the fold happens at five everywhere, off
+`CATEGORICAL_SLOTS` rather than a literal per surface. `--chart-other` is a separate token, so
+"Other" is an extra wedge and costs no hue: five named slices plus a grey tail. Adding a sixth
+slot means redoing the search, not appending a hue.
 
 Tokens reach ECharts already resolved to `rgb()` (see `useResolvedTokens`), because zrender
 parses colours to interpolate them and a `color-mix()` string parses to undefined.
