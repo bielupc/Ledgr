@@ -24,3 +24,6 @@ dev-dist
 *.njsproj
 *.sln
 *.sw?
+
+# Notion exports — personal financial records, imported once and kept locally
+*.csv

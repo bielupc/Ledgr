@@ -2,7 +2,7 @@ import { useCallback } from 'react'
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { queryKeys } from '@/lib/queryKeys'
-import { useOptimisticRows } from '@/features/ledger'
+import { useOptimisticPage } from '@/features/ledger'
 import type { TransferInput } from '@shared/schemas.ts'
 import type { AccountBalance, TransferRow } from '@shared/types.ts'
 
@@ -13,6 +13,9 @@ interface ListParams extends Record<string, unknown> {
   accountId?: string
   search?: string
   limit?: number
+  offset?: number
+  sort?: string
+  dir?: string
 }
 
 export function useTransfers(params: ListParams) {
@@ -61,7 +64,7 @@ export function useCreateTransfer() {
 
   return useMutation({
     mutationFn: (input: TransferInput) => api.transfers.create(input),
-    ...useOptimisticRows<TransferRow, TransferInput>(['transfers'], patch),
+    ...useOptimisticPage<TransferRow, TransferInput>(['transfers'], patch),
   })
 }
 
@@ -89,7 +92,7 @@ export function useUpdateTransfer() {
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: Partial<TransferInput> }) =>
       api.transfers.update(id, input),
-    ...useOptimisticRows<TransferRow, { id: string; input: Partial<TransferInput> }>(
+    ...useOptimisticPage<TransferRow, { id: string; input: Partial<TransferInput> }>(
       ['transfers'],
       patch,
     ),
@@ -101,6 +104,6 @@ export function useDeleteTransfer() {
 
   return useMutation({
     mutationFn: (id: string) => api.transfers.remove(id),
-    ...useOptimisticRows<TransferRow, string>(['transfers'], patch),
+    ...useOptimisticPage<TransferRow, string>(['transfers'], patch),
   })
 }

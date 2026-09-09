@@ -6,6 +6,7 @@ import type {
   DashboardSummary,
   MonthlyTotals,
   NetWorthSnapshot,
+  Page,
   RecurringRuleRow,
   TransactionRow,
   TransferRow,
@@ -106,7 +107,10 @@ export const api = {
       categoryId?: string
       search?: string
       limit?: number
-    }) => request<TransactionRow[]>(`/transactions${search(params)}`),
+      offset?: number
+      sort?: string
+      dir?: string
+    }) => request<Page<TransactionRow>>(`/transactions${search(params)}`),
     create: (input: TransactionInput) => send<TransactionRow>('POST', '/transactions', input),
     update: (id: string, input: Partial<TransactionInput>) =>
       send<TransactionRow>('PATCH', `/transactions/${id}`, input),
@@ -121,7 +125,10 @@ export const api = {
       accountId?: string
       search?: string
       limit?: number
-    }) => request<TransferRow[]>(`/transfers${search(params)}`),
+      offset?: number
+      sort?: string
+      dir?: string
+    }) => request<Page<TransferRow>>(`/transfers${search(params)}`),
     create: (input: TransferInput) => send<TransferRow>('POST', '/transfers', input),
     update: (id: string, input: Partial<TransferInput>) =>
       send<TransferRow>('PATCH', `/transfers/${id}`, input),

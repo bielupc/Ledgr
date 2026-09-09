@@ -6,10 +6,17 @@ import type {
   DashboardSummary,
   MonthlyTotals,
   NetWorthSnapshot,
+  Page,
   TransactionRow,
   TransferRow,
 } from '../shared/types.ts'
-import type { CategoryKind, TransactionQuery, TransferQuery } from '../shared/schemas.ts'
+import type {
+  CategoryKind,
+  TransactionQuery,
+  TransactionSort,
+  TransferQuery,
+  TransferSort,
+} from '../shared/schemas.ts'
 import type { DB } from './db.ts'
 
 export function monthBounds(month: string): { start: string; end: string } {
@@ -59,7 +66,30 @@ export async function listAccountBalances(db: DB, includeDeleted = false): Promi
   return results
 }
 
-export async function listTransactions(db: DB, query: TransactionQuery): Promise<TransactionRow[]> {
+/*
+ * Sort keys are mapped to SQL here rather than interpolated from the request:
+ * the zod enum guarantees the key is one of these, and this table is the only
+ * place a column name reaches the ORDER BY clause. `name` sorts on the label
+ * the row actually renders, which falls back to the category.
+ */
+const TRANSACTION_SORT_SQL: Record<TransactionSort, string> = {
+  occurredOn: 't.occurredOn',
+  amountCents: 't.amountCents',
+  name: "coalesce(t.name, c.name, '')",
+  categoryName: "coalesce(c.name, '')",
+  accountName: 'a.name',
+}
+
+const TRANSFER_SORT_SQL: Record<TransferSort, string> = {
+  occurredOn: 'r.occurredOn',
+  amountCents: 'r.amountCents',
+  note: "coalesce(r.note, '')",
+}
+
+export async function listTransactions(
+  db: DB,
+  query: TransactionQuery,
+): Promise<Page<TransactionRow>> {
   const where: string[] = []
   const params: unknown[] = []
 
@@ -93,25 +123,46 @@ export async function listTransactions(db: DB, query: TransactionQuery): Promise
     const term = `%${query.search}%`
     params.push(term, term, term)
   }
-  params.push(query.limit)
 
   // Accounts and categories join without a deletedAt filter: a soft-deleted
   // one must still render its name in the history it belongs to.
-  const { results } = await db
-    .prepare(
-      `SELECT t.*,
-              a.name AS accountName, a.icon AS accountIcon,
-              c.name AS categoryName, c.icon AS categoryIcon, c.color AS categoryColor
-       FROM transactions t
+  const from = `FROM transactions t
        JOIN accounts a ON a.id = t.accountId
        LEFT JOIN categories c ON c.id = t.categoryId
-       ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-       ORDER BY t.occurredOn DESC, t.createdAt DESC
-       LIMIT ?`,
-    )
-    .bind(...params)
-    .all<TransactionRow>()
-  return results
+       ${where.length ? `WHERE ${where.join(' AND ')}` : ''}`
+
+  const direction = query.dir === 'asc' ? 'ASC' : 'DESC'
+
+  /*
+   * The page and its aggregates ride in one `db.batch()`. They must see the
+   * same rows — a footer fetched separately can disagree with the page above
+   * it — and D1 has no transaction wrapper to hold them together otherwise.
+   */
+  const [page, totals] = await db.batch<never>([
+    db
+      .prepare(
+        `SELECT t.*,
+              a.name AS accountName, a.icon AS accountIcon,
+              c.name AS categoryName, c.icon AS categoryIcon, c.color AS categoryColor
+       ${from}
+       ORDER BY ${TRANSACTION_SORT_SQL[query.sort]} ${direction}, t.createdAt DESC
+       LIMIT ? OFFSET ?`,
+      )
+      .bind(...params, query.limit, query.offset),
+    db
+      .prepare(
+        `SELECT count(*) AS total, coalesce(sum(t.amountCents), 0) AS totalCents ${from}`,
+      )
+      .bind(...params),
+  ])
+
+  const aggregate = (totals!.results as unknown as { total: number; totalCents: number }[])[0]
+
+  return {
+    rows: page!.results as unknown as TransactionRow[],
+    total: aggregate?.total ?? 0,
+    totalCents: aggregate?.totalCents ?? 0,
+  }
 }
 
 export async function getTransactionRow(db: DB, id: string): Promise<TransactionRow | undefined> {
@@ -146,7 +197,7 @@ export async function getTransferRow(db: DB, id: string): Promise<TransferRow | 
   return row ?? undefined
 }
 
-export async function listTransfers(db: DB, query: TransferQuery): Promise<TransferRow[]> {
+export async function listTransfers(db: DB, query: TransferQuery): Promise<Page<TransferRow>> {
   const where: string[] = []
   const params: unknown[] = []
 
@@ -172,23 +223,39 @@ export async function listTransfers(db: DB, query: TransferQuery): Promise<Trans
     const term = `%${query.search}%`
     params.push(term, term, term)
   }
-  params.push(query.limit)
 
-  const { results } = await db
-    .prepare(
-      `SELECT r.*,
-              af.name AS fromAccountName, af.icon AS fromAccountIcon,
-              at2.name AS toAccountName,  at2.icon AS toAccountIcon
-       FROM transfers r
+  const from = `FROM transfers r
        JOIN accounts af  ON af.id  = r.fromAccountId
        JOIN accounts at2 ON at2.id = r.toAccountId
-       ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-       ORDER BY r.occurredOn DESC, r.createdAt DESC
-       LIMIT ?`,
-    )
-    .bind(...params)
-    .all<TransferRow>()
-  return results
+       ${where.length ? `WHERE ${where.join(' AND ')}` : ''}`
+
+  const direction = query.dir === 'asc' ? 'ASC' : 'DESC'
+
+  const [page, totals] = await db.batch<never>([
+    db
+      .prepare(
+        `SELECT r.*,
+              af.name AS fromAccountName, af.icon AS fromAccountIcon,
+              at2.name AS toAccountName,  at2.icon AS toAccountIcon
+       ${from}
+       ORDER BY ${TRANSFER_SORT_SQL[query.sort]} ${direction}, r.createdAt DESC
+       LIMIT ? OFFSET ?`,
+      )
+      .bind(...params, query.limit, query.offset),
+    db
+      .prepare(
+        `SELECT count(*) AS total, coalesce(sum(r.amountCents), 0) AS totalCents ${from}`,
+      )
+      .bind(...params),
+  ])
+
+  const aggregate = (totals!.results as unknown as { total: number; totalCents: number }[])[0]
+
+  return {
+    rows: page!.results as unknown as TransferRow[],
+    total: aggregate?.total ?? 0,
+    totalCents: aggregate?.totalCents ?? 0,
+  }
 }
 
 /**

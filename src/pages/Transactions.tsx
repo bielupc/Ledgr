@@ -30,11 +30,12 @@ import { useTransfers, useDeleteTransfer } from '@/features/transfers/hooks'
 import { useQuickActions } from '@/features/quick-actions/QuickActions'
 import { useMonthParam } from '@/hooks/useMonthParam'
 import { useParamState } from '@/hooks/useParamState'
-import { formatDay, formatMonthLong } from '@/lib/format'
+import { formatDay, formatEuro, formatMonthLong } from '@/lib/format'
 import { fadeUp, stagger, transition } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 import type { CategoryKind } from '@shared/schemas.ts'
 import type { TransactionRow, TransferRow } from '@shared/types.ts'
+import type { SortingState } from '@tanstack/react-table'
 
 const VIEWS = ['expense', 'income', 'transfer'] as const
 type View = (typeof VIEWS)[number]
@@ -61,6 +62,11 @@ const NOUNS: Record<View, string> = {
 
 const NO_ROWS: never[] = []
 
+/* 25 rather than the whole month: a heavy month runs past a screen, and both
+   the mobile list and the desktop table are mounted at once. */
+const PAGE_SIZE = 25
+const DEFAULT_SORT: SortingState = [{ id: 'occurredOn', desc: true }]
+
 const transactionColumn = columnHelperFor<TransactionRow>()
 const transferColumn = columnHelperFor<TransferRow>()
 
@@ -83,22 +89,54 @@ function Ref({
 }
 
 export default function Transactions() {
-  const [month, setMonth] = useMonthParam()
-  const [view, setView] = useParamState<View>('view', 'expense', VIEWS)
-  const [filters, setFilters, filtersActive] = useFilters()
+  const [month, setMonthParam] = useMonthParam()
+  const [view, setViewParam] = useParamState<View>('view', 'expense', VIEWS)
+  const [filters, setFiltersState, filtersActive] = useFilters()
   const { openTransaction, openTransfer } = useQuickActions()
 
   const [editing, setEditing] = useState<EntryRecord | null>(null)
   const [deleting, setDeleting] = useState<EntryRecord | null>(null)
+  const [page, setPage] = useState(1)
+  const [sorting, setSorting] = useState<SortingState>(DEFAULT_SORT)
+
+  /*
+   * Anything that changes the result set underneath the pager sends it back to
+   * page 1 — page 4 of a filter that now returns eight rows is an empty table.
+   * Done in the setters rather than an effect so the reset happens with the
+   * change, not in a pass after it.
+   */
+  const setMonth = (next: string) => {
+    setMonthParam(next)
+    setPage(1)
+  }
+  const setFilters = (next: Parameters<typeof setFiltersState>[0]) => {
+    setFiltersState(next)
+    setPage(1)
+  }
+  // The two tables sort on different columns, so the sort resets with the tab.
+  const setView = (next: View) => {
+    setViewParam(next)
+    setPage(1)
+    setSorting(DEFAULT_SORT)
+  }
+  const changeSorting = (next: SortingState) => {
+    setSorting(next.length ? next : DEFAULT_SORT)
+    setPage(1)
+  }
 
   const isTransferView = view === 'transfer'
   const accounts = useAccounts()
   const categories = useCategories({ kind: isTransferView ? 'expense' : (view as CategoryKind) })
 
+  const sortColumn = sorting[0]?.id ?? 'occurredOn'
   const query = {
     month,
     accountId: filters.accountId === ANY ? undefined : filters.accountId,
     search: filters.search || undefined,
+    limit: PAGE_SIZE,
+    offset: (page - 1) * PAGE_SIZE,
+    sort: sortColumn,
+    dir: sorting[0]?.desc === false ? 'asc' : 'desc',
   }
 
   /*
@@ -110,8 +148,11 @@ export default function Transactions() {
     ...query,
     kind: isTransferView ? 'expense' : view,
     categoryId: filters.categoryId === ANY ? undefined : filters.categoryId,
+    // The transfer table's sort keys are not the transaction table's; only the
+    // visible tab's sort is a valid parameter for the other endpoint.
+    sort: isTransferView ? 'occurredOn' : sortColumn,
   })
-  const transfers = useTransfers(query)
+  const transfers = useTransfers({ ...query, sort: isTransferView ? sortColumn : 'occurredOn' })
 
   const deleteTransaction = useDeleteTransaction()
   const deleteTransfer = useDeleteTransfer()
@@ -279,10 +320,20 @@ export default function Transactions() {
           {isTransferView ? (
             <DataTable
               columns={transferColumns}
-              data={transfers.data ?? NO_ROWS}
+              data={transfers.data?.rows ?? NO_ROWS}
               isLoading={transfers.isLoading}
               rowKey={(row) => row.id}
-              initialSorting={[{ id: 'occurredOn', desc: true }]}
+              sorting={sorting}
+              onSortingChange={(updater) =>
+                changeSorting(typeof updater === 'function' ? updater(sorting) : updater)
+              }
+              pagination={{
+                page,
+                pageSize: PAGE_SIZE,
+                total: transfers.data?.total ?? 0,
+                onPageChange: setPage,
+              }}
+              summary={formatEuro(transfers.data?.totalCents ?? 0)}
               mobileRow={(row) => (
                 <button
                   type="button"
@@ -327,10 +378,20 @@ export default function Transactions() {
           ) : (
             <DataTable
               columns={transactionColumns}
-              data={transactions.data ?? NO_ROWS}
+              data={transactions.data?.rows ?? NO_ROWS}
               isLoading={isLoading}
               rowKey={(row) => row.id}
-              initialSorting={[{ id: 'occurredOn', desc: true }]}
+              sorting={sorting}
+              onSortingChange={(updater) =>
+                changeSorting(typeof updater === 'function' ? updater(sorting) : updater)
+              }
+              pagination={{
+                page,
+                pageSize: PAGE_SIZE,
+                total: transactions.data?.total ?? 0,
+                onPageChange: setPage,
+              }}
+              summary={formatEuro(transactions.data?.totalCents ?? 0)}
               mobileRow={(row) => (
                 <button
                   type="button"

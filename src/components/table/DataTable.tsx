@@ -1,5 +1,12 @@
-import { useTable, FlexRender, type RowData, type SortingState } from '@tanstack/react-table'
-import { ArrowDown, ArrowUp, ChevronsUpDown } from 'lucide-react'
+import {
+  useTable,
+  FlexRender,
+  type OnChangeFn,
+  type RowData,
+  type SortingState,
+} from '@tanstack/react-table'
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, ChevronsUpDown } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { tableSetup, type LedgrColumn } from '@/components/table/setup'
 import { PanelLoading } from '@/components/charts/Panel'
 import { cn } from '@/lib/utils'
@@ -11,6 +18,20 @@ interface DataTableProps<T extends RowData> {
   /** Shown in place of the table when there are no rows. */
   empty: React.ReactNode
   initialSorting?: SortingState
+  /* Sorting is controlled when these are supplied: the rows come from the API
+     already ordered, so the table renders the header state rather than
+     reordering the page it was handed. */
+  sorting?: SortingState
+  onSortingChange?: OnChangeFn<SortingState>
+  /** Absent for a list short enough to arrive whole. `page` is 1-based. */
+  pagination?: {
+    page: number
+    pageSize: number
+    total: number
+    onPageChange: (page: number) => void
+  }
+  /** Aggregate for the whole filter, shown in the footer beside the pager. */
+  summary?: React.ReactNode
   rowKey: (row: T) => string
   /* Below `md` the table is replaced by this, per row. Six columns cannot share
      390px — `table-fixed` makes them overlap rather than overflow, so the
@@ -26,6 +47,10 @@ export function DataTable<T extends RowData>({
   isLoading,
   empty,
   initialSorting,
+  sorting,
+  onSortingChange,
+  pagination,
+  summary,
   rowKey,
   mobileRow,
 }: DataTableProps<T>) {
@@ -33,11 +58,18 @@ export function DataTable<T extends RowData>({
     features: tableSetup,
     data,
     columns,
+    manualSorting: sorting !== undefined,
+    state: sorting !== undefined ? { sorting } : undefined,
+    onSortingChange,
     initialState: initialSorting ? { sorting: initialSorting } : undefined,
   })
 
   if (isLoading) return <PanelLoading height={260} />
   if (!data.length) return <>{empty}</>
+
+  const pageCount = pagination ? Math.max(1, Math.ceil(pagination.total / pagination.pageSize)) : 1
+  const first = pagination ? (pagination.page - 1) * pagination.pageSize + 1 : 1
+  const last = pagination ? Math.min(pagination.page * pagination.pageSize, pagination.total) : 0
 
   return (
     <>
@@ -141,6 +173,43 @@ export function DataTable<T extends RowData>({
         </tbody>
       </table>
       </div>
+
+      {(summary || (pagination && pagination.total > pagination.pageSize)) && (
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-3 py-2.5">
+          <p className="label-mono text-muted-foreground">
+            {pagination
+              ? `${first}\u2013${last} of ${pagination.total}`
+              : `${data.length} row${data.length === 1 ? '' : 's'}`}
+            {summary != null && <span className="text-foreground"> \u00b7 {summary}</span>}
+          </p>
+
+          {pagination && pagination.total > pagination.pageSize && (
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Previous page"
+                disabled={pagination.page <= 1}
+                onClick={() => pagination.onPageChange(pagination.page - 1)}
+              >
+                <ChevronLeft className="size-4" strokeWidth={2.25} />
+              </Button>
+              <span className="label-mono px-1 text-muted-foreground">
+                {pagination.page} / {pageCount}
+              </span>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Next page"
+                disabled={pagination.page >= pageCount}
+                onClick={() => pagination.onPageChange(pagination.page + 1)}
+              >
+                <ChevronRight className="size-4" strokeWidth={2.25} />
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
     </>
   )
 }

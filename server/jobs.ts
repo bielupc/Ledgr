@@ -132,7 +132,12 @@ export async function backfillNetWorthSnapshots(db: DB, throughDate: string = to
   let written = 0
 
   while (cursor <= lastMonth) {
-    await captureNetWorthSnapshot(db, cursor === lastMonth ? throughDate : cursor)
+    // A past month is valued at its end, not at `cursor` (its first day):
+    // captureNetWorthSnapshot clamps to whichever of the two is earlier, so
+    // passing the first would key every historical row to a month's opening
+    // balance while labelling it that month's close.
+    const monthEnd = format(endOfMonth(parseISO(cursor)), 'yyyy-MM-dd')
+    await captureNetWorthSnapshot(db, cursor === lastMonth ? throughDate : monthEnd)
     written += 1
     const next = parseISO(cursor)
     next.setMonth(next.getMonth() + 1)

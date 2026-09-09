@@ -16,6 +16,7 @@ import {
   netWorthAsOf,
   totalsByCategory,
 } from '../server/queries.ts'
+import type { TransactionQuery } from '../shared/schemas.ts'
 
 const db: DB = env.DB
 
@@ -161,15 +162,71 @@ describe('analytics exclude transfers', () => {
   })
 })
 
+/** The API always hands `listTransactions` a zod-parsed query; this fills in the
+ *  same defaults for the tests that call it directly. */
+function listQuery(overrides: Partial<TransactionQuery> = {}): TransactionQuery {
+  return { limit: 100, offset: 0, sort: 'occurredOn', dir: 'desc', ...overrides }
+}
+
+describe('paginated lists', () => {
+  it('pages without moving the aggregates off the whole filter', async () => {
+    for (let day = 1; day <= 5; day += 1) {
+      await addTransaction('expense', `2026-03-0${day}`, day * 1_000, current, groceries)
+    }
+
+    const first = await listTransactions(db, listQuery({ month: '2026-03', limit: 2 }))
+    expect(first.rows).toHaveLength(2)
+    expect(first.total).toBe(5)
+    expect(first.totalCents).toBe(15_000)
+
+    const second = await listTransactions(db, listQuery({ month: '2026-03', limit: 2, offset: 2 }))
+    expect(second.rows).toHaveLength(2)
+    // Same aggregates, different rows: the footer describes the filter, not the page.
+    expect(second.total).toBe(5)
+    expect(second.totalCents).toBe(15_000)
+    expect(second.rows.map((r) => r.id)).not.toEqual(first.rows.map((r) => r.id))
+
+    const last = await listTransactions(db, listQuery({ month: '2026-03', limit: 2, offset: 4 }))
+    expect(last.rows).toHaveLength(1)
+  })
+
+  it('counts and sums only what the filter selects', async () => {
+    await addTransaction('expense', '2026-03-02', 4_000, current, groceries)
+    await addTransaction('expense', '2026-03-03', 6_000, savings, groceries)
+
+    const page = await listTransactions(db, listQuery({ month: '2026-03', accountId: savings }))
+    expect(page.total).toBe(1)
+    expect(page.totalCents).toBe(6_000)
+  })
+
+  it('orders on the server, across pages', async () => {
+    await addTransaction('expense', '2026-03-01', 9_000, current, groceries)
+    await addTransaction('expense', '2026-03-02', 1_000, current, groceries)
+    await addTransaction('expense', '2026-03-03', 5_000, current, groceries)
+
+    const asc = await listTransactions(
+      db,
+      listQuery({ month: '2026-03', sort: 'amountCents', dir: 'asc' }),
+    )
+    expect(asc.rows.map((r) => r.amountCents)).toEqual([1_000, 5_000, 9_000])
+
+    const firstPage = await listTransactions(
+      db,
+      listQuery({ month: '2026-03', sort: 'amountCents', dir: 'desc', limit: 1 }),
+    )
+    expect(firstPage.rows[0]?.amountCents).toBe(9_000)
+  })
+})
+
 describe('soft deletes keep history readable', () => {
   it('still names a deleted account and category on their old rows', async () => {
     const old = await addAccount('Old Wallet', 7_000, true)
     const gym = await addCategory('Gym', 'expense', true)
     await addTransaction('expense', '2026-03-04', 3_500, old, gym)
 
-    const [row] = await listTransactions(db, { month: '2026-03', limit: 100 })
-    expect(row?.accountName).toBe('Old Wallet')
-    expect(row?.categoryName).toBe('Gym')
+    const { rows } = await listTransactions(db, listQuery({ month: '2026-03' }))
+    expect(rows[0]?.accountName).toBe('Old Wallet')
+    expect(rows[0]?.categoryName).toBe('Gym')
   })
 
   it('keeps a deleted category out of its own budget report', async () => {

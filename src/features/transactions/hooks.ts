@@ -2,7 +2,7 @@ import { useCallback } from 'react'
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { queryKeys } from '@/lib/queryKeys'
-import { useOptimisticRows } from '@/features/ledger'
+import { useOptimisticPage } from '@/features/ledger'
 import type { TransactionInput } from '@shared/schemas.ts'
 import type { AccountBalance, Category, TransactionRow } from '@shared/types.ts'
 
@@ -15,6 +15,9 @@ interface ListParams extends Record<string, unknown> {
   categoryId?: string
   search?: string
   limit?: number
+  offset?: number
+  sort?: string
+  dir?: string
 }
 
 export function useTransactions(params: ListParams) {
@@ -82,7 +85,7 @@ export function useCreateTransaction() {
 
   return useMutation({
     mutationFn: (input: TransactionInput) => api.transactions.create(input),
-    ...useOptimisticRows<TransactionRow, TransactionInput>(['transactions'], patch),
+    ...useOptimisticPage<TransactionRow, TransactionInput>(['transactions'], patch),
   })
 }
 
@@ -112,7 +115,7 @@ export function useUpdateTransaction() {
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: Partial<TransactionInput> }) =>
       api.transactions.update(id, input),
-    ...useOptimisticRows<TransactionRow, { id: string; input: Partial<TransactionInput> }>(
+    ...useOptimisticPage<TransactionRow, { id: string; input: Partial<TransactionInput> }>(
       ['transactions'],
       patch,
     ),
@@ -127,6 +130,6 @@ export function useDeleteTransaction() {
 
   return useMutation({
     mutationFn: (id: string) => api.transactions.remove(id),
-    ...useOptimisticRows<TransactionRow, string>(['transactions'], patch),
+    ...useOptimisticPage<TransactionRow, string>(['transactions'], patch),
   })
 }

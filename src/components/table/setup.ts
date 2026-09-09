@@ -16,10 +16,12 @@ export interface CellMeta {
 }
 
 /*
- * Sorting is the only feature registered: filtering happens above the table
- * against the API, because the server already takes month, kind, account,
- * category and search, and filtering the page of rows the client happens to
- * hold would silently disagree with the totals underneath.
+ * Sorting is the only feature registered, and it is driven manually: filtering
+ * and paging both happen above the table against the API, because the server
+ * already takes month, kind, account, category and search, and reordering the
+ * page of rows the client happens to hold would silently disagree with the
+ * totals underneath. The feature stays registered for the header controls and
+ * the sort state they render — the rows arrive in order.
  */
 export const tableSetup = tableFeatures({
   rowSortingFeature,

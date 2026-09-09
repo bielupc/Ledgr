@@ -97,6 +97,30 @@ export const monthSchema = z
   .string()
   .regex(/^\d{4}-\d{2}$/, 'Expected a month as YYYY-MM')
 
+/*
+ * Sort keys are enums, not free text: the column is interpolated into the
+ * ORDER BY clause, which no bound parameter can stand in for.
+ */
+export const TRANSACTION_SORTS = [
+  'occurredOn',
+  'amountCents',
+  'name',
+  'categoryName',
+  'accountName',
+] as const
+export const TRANSFER_SORTS = ['occurredOn', 'amountCents', 'note'] as const
+export const SORT_DIRECTIONS = ['asc', 'desc'] as const
+
+export type TransactionSort = (typeof TRANSACTION_SORTS)[number]
+export type TransferSort = (typeof TRANSFER_SORTS)[number]
+export type SortDirection = (typeof SORT_DIRECTIONS)[number]
+
+const pageQuery = {
+  limit: z.coerce.number().int().positive().max(1000).default(500),
+  offset: z.coerce.number().int().min(0).default(0),
+  dir: z.enum(SORT_DIRECTIONS).default('desc'),
+}
+
 export const transactionQuerySchema = z.object({
   month: monthSchema.optional(),
   from: isoDate.optional(),
@@ -105,7 +129,8 @@ export const transactionQuerySchema = z.object({
   accountId: z.string().optional(),
   categoryId: z.string().optional(),
   search: z.string().trim().max(120).optional(),
-  limit: z.coerce.number().int().positive().max(1000).default(500),
+  sort: z.enum(TRANSACTION_SORTS).default('occurredOn'),
+  ...pageQuery,
 })
 
 export const transferQuerySchema = z.object({
@@ -114,7 +139,8 @@ export const transferQuerySchema = z.object({
   to: isoDate.optional(),
   accountId: z.string().optional(),
   search: z.string().trim().max(120).optional(),
-  limit: z.coerce.number().int().positive().max(1000).default(500),
+  sort: z.enum(TRANSFER_SORTS).default('occurredOn'),
+  ...pageQuery,
 })
 
 export type AccountInput = z.input<typeof accountInputSchema>

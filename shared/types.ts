@@ -64,6 +64,17 @@ export interface TransferRow extends Transfer {
   toAccountIcon: string
 }
 
+/**
+ * One page of a filtered list, plus the aggregates for the *whole* filter —
+ * not for the rows in hand. A footer summing `rows` would report the page and
+ * call it the month, which is the same trap that keeps filtering on the server.
+ */
+export interface Page<Row> {
+  rows: Row[]
+  total: number
+  totalCents: number
+}
+
 export interface Budget {
   id: string
   categoryId: string
