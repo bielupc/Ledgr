@@ -1,5 +1,11 @@
 import { useCallback } from 'react'
-import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { queryKeys } from '@/lib/queryKeys'
 import { useOptimisticPage } from '@/features/ledger'
@@ -24,6 +30,9 @@ export function useTransactions(params: ListParams) {
   return useQuery({
     queryKey: queryKeys.transactions(params),
     queryFn: () => api.transactions.list(params),
+    // Paging and sorting fork the query key; without this the table empties to
+    // a skeleton on every step instead of holding the rows it already has.
+    placeholderData: keepPreviousData,
   })
 }
 

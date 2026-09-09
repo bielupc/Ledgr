@@ -1,40 +1,28 @@
 import { useMemo, useState } from 'react'
 import { motion } from 'motion/react'
-import { Plus, Target, X } from 'lucide-react'
+import { Plus, Target } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { EmptyState } from '@/components/empty/EmptyState'
 import { PanelLoading } from '@/components/charts/Panel'
 import { SharePie, type ShareSlice } from '@/components/charts/SharePie'
 import { DynamicIcon } from '@/components/brand/DynamicIcon'
-import { RowAction } from '@/components/table/RowActions'
 import { useCategories } from '@/features/categories/hooks'
-import { useBudgetLimits, useClearBudget, useSetBudget } from '@/features/budgets/hooks'
+import { useBudgetLimits } from '@/features/budgets/hooks'
+import { BudgetDialog, type BudgetTarget } from '@/features/budgets/BudgetDialog'
 import { useQuickActions } from '@/features/quick-actions/QuickActions'
+import { formatEuro } from '@/lib/format'
 import { fadeUp, stagger, transition } from '@/lib/motion'
 import type { BudgetStatus, Category } from '@shared/types.ts'
 
 const NO_CATEGORIES: Category[] = []
 const NO_LIMITS: BudgetStatus[] = []
 
-/** The locale writes decimals with a comma, so both separators are accepted. */
-function parseLimit(draft: string): number | null {
-  const normalised = draft.replace(/\s/g, '').replace(',', '.')
-  if (normalised === '') return null
-  const value = Number(normalised)
-  if (!Number.isFinite(value) || value <= 0) return null
-  return Math.round(value * 100)
-}
-
-function toDraft(cents: number): string {
-  return String(cents / 100).replace('.', ',')
-}
-
 export default function Budgets() {
   const categories = useCategories({ kind: 'expense' })
   const limits = useBudgetLimits()
-  const setBudget = useSetBudget()
-  const clearBudget = useClearBudget()
   const { openCategory } = useQuickActions()
+
+  const [editing, setEditing] = useState<BudgetTarget | null>(null)
 
   const all = categories.data ?? NO_CATEGORIES
   const limitRows = limits.data ?? NO_LIMITS
@@ -92,12 +80,16 @@ export default function Budgets() {
                 slices={budgeted}
                 caption="Per month"
                 renderTrailing={(slice) => (
-                  <LimitField
+                  <LimitButton
                     slice={slice}
-                    onSet={(amountCents) =>
-                      setBudget.mutate({ categoryId: slice.id, amountCents })
+                    onEdit={() =>
+                      setEditing({
+                        categoryId: slice.id,
+                        name: slice.name,
+                        icon: slice.icon,
+                        budgetCents: slice.valueCents,
+                      })
                     }
-                    onClear={() => clearBudget.mutate(slice.id)}
                   />
                 )}
               />
@@ -115,8 +107,13 @@ export default function Budgets() {
                   <li key={category.id}>
                     <AddLimitChip
                       category={category}
-                      onSet={(amountCents) =>
-                        setBudget.mutate({ categoryId: category.id, amountCents })
+                      onClick={() =>
+                        setEditing({
+                          categoryId: category.id,
+                          name: category.name,
+                          icon: category.icon,
+                          budgetCents: 0,
+                        })
                       }
                     />
                   </li>
@@ -126,160 +123,43 @@ export default function Budgets() {
           )}
         </>
       )}
+
+      <BudgetDialog
+        open={editing !== null}
+        target={editing ?? undefined}
+        onClose={() => setEditing(null)}
+      />
     </motion.div>
   )
 }
 
-/*
- * The figure is the field. It carries no chrome until the row is hovered or it
- * takes focus, so the column reads as a column of amounts rather than a stack
- * of form controls.
- */
-function LimitField({
-  slice,
-  onSet,
-  onClear,
-}: {
-  slice: ShareSlice
-  onSet: (amountCents: number) => void
-  onClear: () => void
-}) {
-  const budgetCents = slice.valueCents
-
-  /*
-   * The field holds a draft while it is being typed into, and takes the
-   * server's figure back whenever that changes underneath it. Adjusted during
-   * render rather than in an effect: an effect would paint the stale figure
-   * first and only then correct it, and it would fire on the render the commit
-   * itself causes, overwriting what was just typed.
-   */
-  const [draft, setDraft] = useState(() => toDraft(budgetCents))
-  const [settled, setSettled] = useState(budgetCents)
-  if (settled !== budgetCents) {
-    setSettled(budgetCents)
-    setDraft(toDraft(budgetCents))
-  }
-
-  const commit = () => {
-    if (draft.trim() === '') {
-      onClear()
-      return
-    }
-    const cents = parseLimit(draft)
-    // Anything unreadable puts the stored figure back rather than clearing a
-    // limit off a stray keystroke; removing one is what the × is for.
-    if (cents === null) {
-      setDraft(toDraft(budgetCents))
-      return
-    }
-    if (cents !== budgetCents) onSet(cents)
-  }
-
+/* The figure is a button, not a field: a limit is committed in the dialog, so
+ * the row shows what is set rather than a control that saves on blur. */
+function LimitButton({ slice, onEdit }: { slice: ShareSlice; onEdit: () => void }) {
   return (
-    <>
-      <span className="relative w-[92px] shrink-0 sm:w-[112px]">
-        <input
-          value={draft}
-          inputMode="decimal"
-          aria-label={`Monthly limit for ${slice.name}`}
-          onChange={(event) => setDraft(event.target.value)}
-          onBlur={commit}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              event.preventDefault()
-              event.currentTarget.blur()
-            }
-            if (event.key === 'Escape') {
-              setDraft(toDraft(budgetCents))
-              event.currentTarget.blur()
-            }
-          }}
-          className="tabular h-8 w-full rounded-md border border-transparent bg-transparent pr-6 pl-2 text-right text-[13.5px] outline-none transition-[border-color,background-color] duration-150 ease-[var(--ease-out-brand)] group-hoverfine:border-border group-hoverfine:bg-surface focus:border-ring focus:bg-surface focus:ring-[3px] focus:ring-ring/50"
-        />
-        <span className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-[12px] text-subtle-foreground">
-          €
-        </span>
-      </span>
-
-      <span className="flex w-7 shrink-0 justify-end">
-        <RowAction
-          icon={X}
-          label={`Remove the limit on ${slice.name}`}
-          tone="destructive"
-          onClick={onClear}
-        />
-      </span>
-    </>
+    <button
+      type="button"
+      onClick={onEdit}
+      aria-label={`Edit the monthly limit for ${slice.name}`}
+      className="tabular h-8 shrink-0 rounded-md border border-transparent px-2 text-right text-[13.5px] transition-[border-color,background-color,color] duration-150 ease-[var(--ease-out-brand)] outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 group-hoverfine:border-border group-hoverfine:bg-surface hoverfine:text-accent-ink"
+    >
+      {formatEuro(slice.valueCents)}
+    </button>
   )
 }
 
-/*
- * Opens into an amount in place, so giving a category its first limit is one
- * click and a number without the eye leaving the chip it started on. Once
- * committed the category leaves this row and joins the ranked list above.
- */
-function AddLimitChip({
-  category,
-  onSet,
-}: {
-  category: Category
-  onSet: (amountCents: number) => void
-}) {
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState('')
-
-  const commit = () => {
-    const cents = parseLimit(draft)
-    if (cents !== null) onSet(cents)
-    setEditing(false)
-  }
-
-  if (!editing) {
-    return (
-      <button
-        type="button"
-        onClick={() => {
-          setDraft('')
-          setEditing(true)
-        }}
-        className="flex h-9 items-center gap-2 rounded-lg border border-dashed border-border px-3 text-[12.5px] text-muted-foreground transition-[border-color,color,scale] duration-150 ease-[var(--ease-out-brand)] outline-none active:scale-[0.98] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 hoverfine:border-emerald/50 hoverfine:text-foreground"
-      >
-        <DynamicIcon name={category.icon} className="size-3.5 shrink-0 text-subtle-foreground" />
-        {category.name}
-        <Plus className="size-3.5 shrink-0 text-subtle-foreground" strokeWidth={2} />
-      </button>
-    )
-  }
-
+/* Opens the same dialog a set limit opens, so giving a category its first limit
+ * and changing one afterwards are the same gesture. */
+function AddLimitChip({ category, onClick }: { category: Category; onClick: () => void }) {
   return (
-    <span className="flex h-9 items-center gap-2 rounded-lg border border-border bg-card pr-1.5 pl-3 text-[12.5px]">
-      <DynamicIcon name={category.icon} className="size-3.5 shrink-0 text-muted-foreground" />
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex h-9 items-center gap-2 rounded-lg border border-dashed border-border px-3 text-[12.5px] text-muted-foreground transition-[border-color,color,scale] duration-150 ease-[var(--ease-out-brand)] outline-none active:scale-[0.98] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 hoverfine:border-emerald/50 hoverfine:text-foreground"
+    >
+      <DynamicIcon name={category.icon} className="size-3.5 shrink-0 text-subtle-foreground" />
       {category.name}
-      <span className="relative w-[82px]">
-        <input
-          autoFocus
-          value={draft}
-          inputMode="decimal"
-          placeholder="0"
-          aria-label={`Monthly limit for ${category.name}`}
-          onChange={(event) => setDraft(event.target.value)}
-          onBlur={commit}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              event.preventDefault()
-              event.currentTarget.blur()
-            }
-            if (event.key === 'Escape') {
-              setDraft('')
-              setEditing(false)
-            }
-          }}
-          className="tabular h-7 w-full rounded border border-border bg-surface pr-5 pl-1.5 text-right text-[12.5px] outline-none transition-[border-color,box-shadow] duration-150 ease-[var(--ease-out-brand)] focus:border-ring focus:ring-[3px] focus:ring-ring/50"
-        />
-        <span className="pointer-events-none absolute top-1/2 right-1.5 -translate-y-1/2 text-[11px] text-subtle-foreground">
-          €
-        </span>
-      </span>
-    </span>
+      <Plus className="size-3.5 shrink-0 text-subtle-foreground" strokeWidth={2} />
+    </button>
   )
 }

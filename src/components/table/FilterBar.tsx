@@ -61,7 +61,9 @@ export function FilterBar({
           onChange={(event) => setDraft(event.target.value)}
           placeholder={placeholder}
           aria-label={placeholder}
-          className="pl-8.5"
+          /* Opaque: the dither field behind the page reads straight through a
+             transparent control and competes with the text in it. */
+          className="bg-surface pl-8.5 dark:bg-surface"
         />
       </div>
 
@@ -111,7 +113,7 @@ function FilterSelect({
 }) {
   return (
     <Select value={value} onValueChange={onValueChange}>
-      <SelectTrigger className="min-w-0 flex-1 *:data-[slot=select-value]:min-w-0 sm:w-[164px] sm:flex-none">
+      <SelectTrigger className="min-w-0 flex-1 bg-surface *:data-[slot=select-value]:min-w-0 sm:w-[164px] sm:flex-none dark:bg-surface dark:hover:bg-surface-raised">
         <SelectValue />
       </SelectTrigger>
       <SelectContent>

@@ -67,7 +67,7 @@ export function AppShell() {
             radius={0.75}
             intensity={0.7}
             scale={0.45}
-            className="absolute inset-0 -z-10 opacity-[0.4]"
+            className="absolute inset-0 -z-10 opacity-[0.22]"
           />
 
           <main className="flex-1 overflow-y-auto">

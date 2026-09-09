@@ -62,9 +62,10 @@ const NOUNS: Record<View, string> = {
 
 const NO_ROWS: never[] = []
 
-/* 25 rather than the whole month: a heavy month runs past a screen, and both
-   the mobile list and the desktop table are mounted at once. */
-const PAGE_SIZE = 25
+/* 15 rather than the whole month: a busy month runs to 26 rows, so this is the
+   point where paging is worth reaching for at all — at 25 almost every month
+   was a single page and the pager had nothing to do. */
+const PAGE_SIZE = 15
 const DEFAULT_SORT: SortingState = [{ id: 'occurredOn', desc: true }]
 
 const transactionColumn = columnHelperFor<TransactionRow>()
@@ -153,6 +154,17 @@ export default function Transactions() {
     sort: isTransferView ? 'occurredOn' : sortColumn,
   })
   const transfers = useTransfers({ ...query, sort: isTransferView ? sortColumn : 'occurredOn' })
+
+  /*
+   * Deleting the last rows of the final page leaves `page` past the end, and
+   * the reader stranded on an empty table with no way back. Corrected during
+   * render rather than in an effect so it never paints the empty state first.
+   */
+  const total = isTransferView ? transfers.data?.total : transactions.data?.total
+  // Undefined on the very first load: clamping against a count we don't have
+  // yet would snap the reader back to page 1 mid-navigation.
+  const pageCount = total === undefined ? page : Math.max(1, Math.ceil(total / PAGE_SIZE))
+  if (page > pageCount) setPage(pageCount)
 
   const deleteTransaction = useDeleteTransaction()
   const deleteTransfer = useDeleteTransfer()

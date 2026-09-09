@@ -174,16 +174,19 @@ export function DataTable<T extends RowData>({
       </table>
       </div>
 
-      {(summary || (pagination && pagination.total > pagination.pageSize)) && (
+      {(summary || pagination) && (
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-3 py-2.5">
           <p className="label-mono text-muted-foreground">
             {pagination
-              ? `${first}\u2013${last} of ${pagination.total}`
+              ? `${first}–${last} of ${pagination.total}`
               : `${data.length} row${data.length === 1 ? '' : 's'}`}
-            {summary != null && <span className="text-foreground"> \u00b7 {summary}</span>}
+            {summary != null && <span className="text-foreground">{' · '}{summary}</span>}
           </p>
 
-          {pagination && pagination.total > pagination.pageSize && (
+          {/* Always mounted, disabled at the bounds: a control that appears only
+              on the months long enough to overflow makes the footer jump as you
+              step through them, and hides where paging lives. */}
+          {pagination && (
             <div className="flex items-center gap-1">
               <Button
                 variant="ghost"
@@ -194,7 +197,7 @@ export function DataTable<T extends RowData>({
               >
                 <ChevronLeft className="size-4" strokeWidth={2.25} />
               </Button>
-              <span className="label-mono px-1 text-muted-foreground">
+              <span className="label-mono px-1 tabular-nums text-muted-foreground">
                 {pagination.page} / {pageCount}
               </span>
               <Button

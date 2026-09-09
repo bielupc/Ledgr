@@ -15,7 +15,7 @@ export function MonthPicker({ month, onChange }: MonthPickerProps) {
   const isCurrent = month === currentMonth()
 
   return (
-    <div className="flex items-center gap-1 rounded-lg border border-border bg-surface/60 p-0.5">
+    <div className="flex items-center gap-1 rounded-lg border border-border bg-surface p-0.5">
       <Button variant="ghost" size="icon" className="size-7" onClick={() => shift(-1)}>
         <ChevronLeft className="size-4" />
         <span className="sr-only">Previous month</span>

@@ -14,6 +14,7 @@ import {
   withAlpha,
   type Tokens,
 } from '@/lib/charts'
+import { useFinePointer } from '@/hooks/useFinePointer'
 import { formatCompactAmount, formatMonthLabel, formatMonthShort } from '@/lib/format'
 
 const MONTHS = 8
@@ -30,6 +31,7 @@ function dot(color: string) {
 export function FlowChart({ month, kind }: { month: string; kind: 'income' | 'expense' }) {
   const totals = useMonthlyTotals(month, MONTHS)
   const { openTransaction } = useQuickActions()
+  const finePointer = useFinePointer()
   const data = useMemo(() => totals.data ?? [], [totals.data])
 
   const values = useMemo(
@@ -52,7 +54,11 @@ export function FlowChart({ month, kind }: { month: string; kind: 'income' | 'ex
         // Every point carries its own figure, so axis ticks would only repeat
         // the annotation; the split lines alone give the scale.
         yAxis: { ...moneyAxis(tokens), axisLabel: { show: false } },
+        /* Off on touch: every figure is already printed above its point, so
+           the tooltip adds nothing there and fires on each swipe past the
+           card. */
         tooltip: {
+          show: finePointer,
           trigger: 'axis',
           axisPointer: { type: 'line', lineStyle: { color: tokens['--chart-axis'], width: 1 } },
           formatter: (params: unknown) => {
@@ -104,7 +110,7 @@ export function FlowChart({ month, kind }: { month: string; kind: 'income' | 'ex
         ],
       }
     },
-    [data, values, kind],
+    [data, values, kind, finePointer],
   )
 
   const income = kind === 'income'
@@ -136,6 +142,7 @@ export function FlowChart({ month, kind }: { month: string; kind: 'income' | 'ex
  *  black on light). */
 export function BalanceChart({ month }: { month: string }) {
   const totals = useMonthlyTotals(month, MONTHS)
+  const finePointer = useFinePointer()
   const data = useMemo(() => totals.data ?? [], [totals.data])
   const hasData = data.some((d) => d.incomeCents > 0 || d.expenseCents > 0)
 
@@ -148,6 +155,7 @@ export function BalanceChart({ month }: { month: string }) {
       ),
       yAxis: { ...moneyAxis(tokens), axisLabel: { show: false } },
       tooltip: {
+        show: finePointer,
         trigger: 'axis',
         axisPointer: { type: 'shadow', shadowStyle: { color: tokens['--muted'] } },
         formatter: (params: unknown) => {
@@ -185,7 +193,7 @@ export function BalanceChart({ month }: { month: string }) {
         },
       ],
     }),
-    [data],
+    [data, finePointer],
   )
 
   return (
