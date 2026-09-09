@@ -216,85 +216,126 @@ function RuleRow({
   const today = todayIso()
   const days = differenceInCalendarDays(parseISO(rule.nextRunOn), parseISO(today))
   const imminent = active && days <= 3
+  const name = rule.name ?? rule.categoryName ?? (income ? 'Income' : 'Expense')
+
+  const icon = (
+    <span
+      className={cn(
+        'grid size-9 shrink-0 place-items-center rounded-lg border bg-surface transition-[border-color,scale] duration-150 ease-[var(--ease-out-brand)] group-hoverfine:scale-105',
+        active ? 'border-border group-hoverfine:border-emerald/50' : 'border-dashed border-border',
+      )}
+    >
+      <DynamicIcon
+        name={rule.categoryIcon ?? rule.accountIcon}
+        className="size-4 text-muted-foreground"
+      />
+    </span>
+  )
+
+  const amount = (
+    <Money
+      cents={rule.amountCents}
+      tone={income ? 'positive' : 'negative'}
+      className="shrink-0 text-[13.5px]"
+    />
+  )
+
+  const toggle = (
+    <Switch
+      size="sm"
+      checked={active}
+      onCheckedChange={onToggle}
+      aria-label={active ? `Pause ${rule.name ?? 'series'}` : `Resume ${rule.name ?? 'series'}`}
+      className="shrink-0"
+    />
+  )
+
+  const actions = (
+    <>
+      <RowAction icon={Pencil} label="Edit" onClick={onEdit} />
+      <RowAction icon={Trash2} label="Delete series" tone="destructive" onClick={onDelete} />
+    </>
+  )
 
   return (
     <li
       data-paused={!active || undefined}
-      className="group flex items-center gap-3 rounded-lg px-2.5 py-2.5 transition-[background-color,opacity] duration-150 ease-[var(--ease-out-brand)] data-paused:opacity-55 hoverfine:bg-muted/60"
+      className="group rounded-lg transition-[background-color,opacity] duration-150 ease-[var(--ease-out-brand)] data-paused:opacity-55 hoverfine:bg-muted/60"
     >
-      <span
-        className={cn(
-          'grid size-9 shrink-0 place-items-center rounded-lg border bg-surface transition-[border-color,scale] duration-150 ease-[var(--ease-out-brand)] group-hoverfine:scale-105',
-          active ? 'border-border group-hoverfine:border-emerald/50' : 'border-dashed border-border',
+      {/*
+       * Two layouts rather than one row bent into a phone. Across the row the
+       * name is last in line behind four fixed columns and ends up with about
+       * 30px; here it leads its own line and the schedule sits under it with
+       * the controls. The next posting date goes with them: "Monthly on the
+       * 14th" already says when, and the date only repeated it.
+       */}
+      <div className="flex items-start gap-2 px-2.5 py-2.5 sm:hidden">
+        {icon}
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+          <div className="flex items-baseline gap-2">
+            <span className="min-w-0 flex-1 truncate text-[14px]">{name}</span>
+            {amount}
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="min-w-0 flex-1 truncate text-[12px] text-muted-foreground">
+              {describeRecurrence(rule)}
+            </span>
+            {toggle}
+            {actions}
+          </div>
+        </div>
+      </div>
+
+      <div className="hidden items-center gap-3 px-2.5 py-2.5 sm:flex">
+        {icon}
+
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="flex items-center gap-1.5">
+            <Direction
+              className={cn('size-3 shrink-0', income ? 'text-positive' : 'text-negative')}
+              strokeWidth={2.5}
+            />
+            <span className="min-w-0 truncate text-[13.5px]">{name}</span>
+          </span>
+          {/* The cadence alone. The account is not what this screen is read
+              for, and the category is already the row's own name whenever the
+              rule has none of its own. */}
+          <span className="truncate text-[12px] text-muted-foreground">
+            {describeRecurrence(rule)}
+          </span>
+        </span>
+
+        {/* Cells filling toward the next posting: the guidelines' own progress
+            language, and it turns a column of dates into something with shape. */}
+        {active && (
+          <span className="hidden shrink-0 items-center gap-3 md:flex">
+            <CellMeter
+              fraction={cycleFraction(rule, today)}
+              cells={12}
+              tone={income ? 'emerald' : 'negative'}
+            />
+            <span
+              className={cn(
+                'w-[86px] text-right text-[12px]',
+                imminent ? 'font-medium text-accent-ink' : 'text-muted-foreground',
+              )}
+            >
+              {countdown(days)}
+            </span>
+          </span>
         )}
-      >
-        <DynamicIcon
-          name={rule.categoryIcon ?? rule.accountIcon}
-          className="size-4 text-muted-foreground"
-        />
-      </span>
 
-      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="flex items-center gap-1.5">
-          <Direction
-            className={cn('size-3 shrink-0', income ? 'text-positive' : 'text-negative')}
-            strokeWidth={2.5}
-          />
-          <span className="min-w-0 truncate text-[13.5px]">
-            {rule.name ?? rule.categoryName ?? (income ? 'Income' : 'Expense')}
+        <span className="flex w-[124px] shrink-0 flex-col items-end gap-0.5">
+          {amount}
+          <span className="tabular text-[11px] text-subtle-foreground">
+            {active ? formatFullDay(rule.nextRunOn) : 'Paused'}
           </span>
         </span>
-        {/* The cadence alone. The account is not what this screen is read for,
-            and the category is already the row's own name whenever the rule
-            has none of its own. */}
-        <span className="truncate text-[12px] text-muted-foreground">
-          {describeRecurrence(rule)}
-        </span>
-      </span>
 
-      {/* Cells filling toward the next posting: the guidelines' own progress
-          language, and it turns a column of dates into something with shape. */}
-      {active && (
-        <span className="hidden shrink-0 items-center gap-3 md:flex">
-          <CellMeter
-            fraction={cycleFraction(rule, today)}
-            cells={12}
-            tone={income ? 'emerald' : 'negative'}
-          />
-          <span
-            className={cn(
-              'w-[86px] text-right text-[12px]',
-              imminent ? 'font-medium text-accent-ink' : 'text-muted-foreground',
-            )}
-          >
-            {countdown(days)}
-          </span>
-        </span>
-      )}
+        {toggle}
 
-      <span className="flex w-[124px] shrink-0 flex-col items-end gap-0.5">
-        <Money
-          cents={rule.amountCents}
-          tone={income ? 'positive' : 'negative'}
-          className="text-[13.5px]"
-        />
-        <span className="tabular text-[11px] text-subtle-foreground">
-          {active ? formatFullDay(rule.nextRunOn) : 'Paused'}
-        </span>
-      </span>
-
-      <Switch
-        size="sm"
-        checked={active}
-        onCheckedChange={onToggle}
-        aria-label={active ? `Pause ${rule.name ?? 'series'}` : `Resume ${rule.name ?? 'series'}`}
-        className="shrink-0"
-      />
-
-      <span className="flex w-[68px] shrink-0 justify-end gap-1">
-        <RowAction icon={Pencil} label="Edit" onClick={onEdit} />
-        <RowAction icon={Trash2} label="Delete series" tone="destructive" onClick={onDelete} />
-      </span>
+        <span className="flex w-[68px] shrink-0 justify-end gap-1">{actions}</span>
+      </div>
     </li>
   )
 }

@@ -4,6 +4,7 @@ import { Outlet, useLocation } from 'react-router'
 import { DitherField } from '@/components/brand/DitherField'
 import { GridMarkPulse } from '@/components/brand/GridMark'
 import { Sidebar } from '@/components/layout/Sidebar'
+import { BottomNav } from '@/components/layout/BottomNav'
 import { CommandPalette } from '@/components/command/CommandPalette'
 import { EntryDialog } from '@/features/transactions/EntryDialog'
 import { AccountDialog } from '@/features/accounts/AccountDialog'
@@ -39,18 +40,24 @@ export function AppShell() {
   }
 
   return (
-    <div className="relative isolate flex h-dvh overflow-hidden bg-background">
-      <Sidebar collapsed={collapsed} onToggle={toggleCollapsed} />
+    /* Column on a phone so the bar can hold the bottom edge, row from `md` up
+       where the rail takes the left. The two navigations are exclusive: only
+       one is ever mounted at a width. */
+    <div className="relative isolate flex h-dvh flex-col overflow-hidden bg-background md:flex-row">
+      <div className="hidden md:flex">
+        <Sidebar collapsed={collapsed} onToggle={toggleCollapsed} />
+      </div>
 
       {/* Inset, not flush: a small gap on every side lets the content take a
           full rounded corner set even sitting right against the flat
           sidebar, the way a card sits on the page behind it rather than
-          being the page. */}
-      <div className="flex min-h-0 min-w-0 flex-1 p-2 pl-0">
+          being the page. The inset is desktop-only — on a phone that margin
+          and its corners cost width the content needs more. */}
+      <div className="flex min-h-0 min-w-0 flex-1 md:p-2 md:pl-0">
         {/* `isolate` is load-bearing: without a stacking context here the
             dither's negative z-index escapes to the root and paints under
             this card's own background instead of on top of it. */}
-        <div className="relative isolate flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border bg-card">
+        <div className="relative isolate flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-border bg-card md:rounded-2xl md:border">
           {/* The ground is not flat: a light source past the top-right
               corner, under the page content but inside the card itself, so
               the dither reads on the surface people actually look at instead
@@ -60,7 +67,7 @@ export function AppShell() {
             radius={0.75}
             intensity={0.7}
             scale={0.45}
-            className="absolute inset-0 -z-10 opacity-[0.55]"
+            className="absolute inset-0 -z-10 opacity-[0.4]"
           />
 
           <main className="flex-1 overflow-y-auto">
@@ -71,7 +78,7 @@ export function AppShell() {
               initial={{ opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: DURATION.fast, ease: EASE.out }}
-              className="mx-auto w-full max-w-[1400px] px-6 py-6"
+              className="mx-auto w-full max-w-[1400px] px-4 py-4 md:px-6 md:py-6"
             >
               <Suspense
                 fallback={
@@ -86,6 +93,8 @@ export function AppShell() {
           </main>
         </div>
       </div>
+
+      <BottomNav />
 
       <CommandPalette />
 

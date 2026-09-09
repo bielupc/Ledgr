@@ -82,15 +82,6 @@ export default function Budgets() {
         </motion.div>
       ) : (
         <>
-          {/* Said once, because it is the meaning of every figure below. */}
-          <motion.p
-            variants={fadeUp}
-            transition={transition}
-            className="text-[12.5px] text-subtle-foreground"
-          >
-            Each limit applies to every month and resets on the 1st, with nothing carried over.
-          </motion.p>
-
           {budgeted.length > 0 && (
             <motion.section
               variants={fadeUp}
@@ -186,7 +177,7 @@ function LimitField({
 
   return (
     <>
-      <span className="relative w-[112px] shrink-0">
+      <span className="relative w-[92px] shrink-0 sm:w-[112px]">
         <input
           value={draft}
           inputMode="decimal"

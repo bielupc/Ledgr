@@ -73,32 +73,39 @@ export function BudgetPanel({ month }: { month: string }) {
                   </span>
                 </div>
 
-                <div className="flex items-center gap-2.5">
+                {/* The meter is a fixed 114px run of cells, and the two
+                    figures need about 220px between them: on a phone that is
+                    more than the row has, and the budget itself was the part
+                    that got truncated away. Below `sm` the meter takes its own
+                    line so both figures stay whole. */}
+                <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-2.5">
                   <CellMeter
                     fraction={over ? 1 : row.spentCents / row.budgetCents}
                     tone={over ? 'negative' : 'emerald'}
                     delayMs={index * 40}
                   />
-                  <span className="tabular flex-1 truncate text-[11px] text-subtle-foreground">
-                    <Money cents={row.spentCents} className="text-[11px]" /> of{' '}
-                    <Money cents={row.budgetCents} className="text-[11px]" />
-                  </span>
-                  <span
-                    className={cn(
-                      'tabular shrink-0 text-[11px]',
-                      over ? 'font-medium text-negative' : 'text-subtle-foreground',
-                    )}
-                  >
-                    {over ? (
-                      <>
-                        <Money cents={-remaining} className="text-[11px]" /> over
-                      </>
-                    ) : (
-                      <>
-                        <Money cents={remaining} className="text-[11px]" /> left
-                      </>
-                    )}
-                  </span>
+                  <div className="flex items-center justify-between gap-2.5 sm:min-w-0 sm:flex-1">
+                    <span className="tabular min-w-0 truncate text-[11px] text-subtle-foreground">
+                      <Money cents={row.spentCents} className="text-[11px]" /> of{' '}
+                      <Money cents={row.budgetCents} className="text-[11px]" />
+                    </span>
+                    <span
+                      className={cn(
+                        'tabular shrink-0 text-[11px]',
+                        over ? 'font-medium text-negative' : 'text-subtle-foreground',
+                      )}
+                    >
+                      {over ? (
+                        <>
+                          <Money cents={-remaining} className="text-[11px]" /> over
+                        </>
+                      ) : (
+                        <>
+                          <Money cents={remaining} className="text-[11px]" /> left
+                        </>
+                      )}
+                    </span>
+                  </div>
                 </div>
               </li>
             )

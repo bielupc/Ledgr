@@ -115,12 +115,12 @@ export function NetWorthHero({ month }: { month: string }) {
         {/* The trend is the card's material, starting where the figure ends
             rather than sitting beside it as a second widget. */}
         {hasHistory && (
-          <div className="absolute inset-y-0 right-0 hidden w-[70%] sm:block [mask-image:linear-gradient(to_right,transparent_0%,black_12%)]">
+          <div className="absolute inset-y-0 right-0 hidden w-[70%] lg:block [mask-image:linear-gradient(to_right,transparent_0%,black_12%)]">
             <Chart build={build} height="100%" />
           </div>
         )}
 
-        <div className="relative z-10 flex min-h-[152px] w-[30%] min-w-[340px] flex-col gap-0 px-6 py-5">
+        <div className="relative z-10 flex w-full flex-col gap-0 px-5 py-5 lg:min-h-[152px] lg:w-[30%] lg:min-w-[340px] lg:px-6">
         {/* Stated as of the viewed month, while the Balances panel below is
             always current. Say which, or the two totals look contradictory. */}
         <span className="label-mono">
@@ -157,6 +157,15 @@ export function NetWorthHero({ month }: { month: string }) {
           </p>
         )}
         </div>
+
+        {/* Below `sm` there is no 70% to give the trend — it becomes a band
+            under the figure instead of a plane beside it. Same series and the
+            same `build`; only the space it occupies changes. */}
+        {hasHistory && (
+          <div className="h-[104px] w-full lg:hidden">
+            <Chart build={build} height="100%" />
+          </div>
+        )}
       </div>
 
       {/* Recessed plane: darker ground and a 1px inset bevel where it drops
@@ -189,7 +198,10 @@ function Stat({
   return (
     <div
       className={cn(
-        'group relative px-6 py-3 transition-colors duration-150 ease-[var(--ease-out-brand)] hoverfine:bg-card/50',
+        /* A third of a 390px card leaves ~95px of content: at the desktop
+           size and inset the figure runs past its cell and, with the card
+           clipping, loses its last characters. */
+        'group relative px-3 py-2.5 transition-colors duration-150 ease-[var(--ease-out-brand)] sm:px-6 sm:py-3 hoverfine:bg-card/50',
         bordered && 'border-x border-border',
       )}
     >
@@ -197,7 +209,12 @@ function Stat({
         {label}
       </span>
       <div className="mt-1">
-        <Money cents={cents} tone={tone} animate className="text-[17px] font-medium" />
+        <Money
+          cents={cents}
+          tone={tone}
+          animate
+          className="money-stat text-[13px] font-medium sm:text-[17px]"
+        />
       </div>
     </div>
   )

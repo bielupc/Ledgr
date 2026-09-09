@@ -52,7 +52,13 @@ export function SharePie({
   height = 228,
   className,
 }: SharePieProps) {
-  const [active, setActive] = useState<number | null>(null)
+  /* A hovered slice clears itself when the pointer leaves; a clicked or
+     tapped one stays. Touch needs the distinction: one tap fires mouseover,
+     click and mouseout together, so a single piece of state would light the
+     slice up and clear it in the same gesture. */
+  const [hovered, setHovered] = useState<number | null>(null)
+  const [pinned, setPinned] = useState<number | null>(null)
+  const active = pinned ?? hovered
 
   const totalCents = slices.reduce((sum, slice) => sum + slice.valueCents, 0)
 
@@ -116,9 +122,14 @@ export function SharePie({
 
   const events = useMemo(
     () => ({
-      mouseover: (params: never) => setActive((params as { dataIndex: number }).dataIndex),
-      mouseout: () => setActive(null),
-      globalout: () => setActive(null),
+      mouseover: (params: never) => setHovered((params as { dataIndex: number }).dataIndex),
+      mouseout: () => setHovered(null),
+      globalout: () => setHovered(null),
+      // Clicking the slice already chosen puts the total back.
+      click: (params: never) => {
+        const index = (params as { dataIndex: number }).dataIndex
+        setPinned((current) => (current === index ? null : index))
+      },
     }),
     [],
   )
@@ -175,7 +186,10 @@ export function SharePie({
 
             <span className="min-w-0 flex-1 truncate text-[13.5px]">{slice.name}</span>
 
-            <span className="tabular w-9 shrink-0 text-right text-[11.5px] text-subtle-foreground">
+            {/* The share is the one cell a phone can spare: the ring above
+                already reads as proportion, while the name it was squeezing
+                to "Groceri…" is the row's identity. */}
+            <span className="tabular hidden w-9 shrink-0 text-right text-[11.5px] text-subtle-foreground sm:block">
               {percent(slice.valueCents, totalCents)}%
             </span>
 

@@ -56,7 +56,12 @@ export function DitherField({
       if (!context) return
       context.clearRect(0, 0, width, height)
 
-      const aspect = rect.width / rect.height
+      /* Converts horizontal distance into the same unit as vertical, so the
+         falloff is a circle on screen rather than an ellipse. Floored at 1:
+         in portrait the raw ratio shrinks every horizontal distance, the
+         light's radius then covers the full width, and the field floods into
+         a flat checkerboard instead of falling off from its corner. */
+      const aspect = Math.max(rect.width / rect.height, 1)
 
       // In light mode the ink inverts to Carbon so the texture reads as a
       // shadow on Paper rather than a glow on Carbon.

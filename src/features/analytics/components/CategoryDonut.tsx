@@ -59,7 +59,14 @@ export function CategoryDonut({
 }) {
   const totals = useCategoryTotals(month, kind)
   const { openTransaction } = useQuickActions()
-  const [active, setActive] = useState<number | null>(null)
+  /* Hover is transient and a tap or click is not: a pointer leaving the ring
+     takes its own highlight with it, while a chosen slice stays chosen. On a
+     phone this is the whole mechanism — a tap fires mouseover, click and then
+     mouseout in one go, so a single piece of state would light up and clear
+     itself in the same gesture. */
+  const [hovered, setHovered] = useState<number | null>(null)
+  const [pinned, setPinned] = useState<number | null>(null)
+  const active = pinned ?? hovered
 
   const rows = useMemo(() => foldTail(totals.data ?? []), [totals.data])
   const total = useMemo(() => rows.reduce((sum, row) => sum + row.totalCents, 0), [rows])
@@ -102,9 +109,14 @@ export function CategoryDonut({
 
   const events = useMemo(
     () => ({
-      mouseover: (params: never) => setActive((params as { dataIndex: number }).dataIndex),
-      mouseout: () => setActive(null),
-      globalout: () => setActive(null),
+      mouseover: (params: never) => setHovered((params as { dataIndex: number }).dataIndex),
+      mouseout: () => setHovered(null),
+      globalout: () => setHovered(null),
+      // Clicking the slice already chosen puts the total back.
+      click: (params: never) => {
+        const index = (params as { dataIndex: number }).dataIndex
+        setPinned((current) => (current === index ? null : index))
+      },
     }),
     [],
   )
@@ -144,7 +156,7 @@ export function CategoryDonut({
   return (
     <Panel title={title}>
       <div className="flex items-center gap-3 px-2 pb-2">
-        <div className="relative w-[46%] shrink-0">
+        <div className="relative w-full sm:w-[46%] sm:shrink-0">
           <Chart build={build} height={204} onEvents={events} />
 
           {/* Held in HTML rather than an ECharts graphic so the figure keeps the
@@ -161,9 +173,12 @@ export function CategoryDonut({
           </div>
         </div>
 
-        {/* Legend is always present for >=2 slices, so identity never depends on
-            colour alone. */}
-        <ul className="flex min-w-0 flex-1 flex-col gap-1.5">
+        {/* Legend from `sm` up, where identity never depends on colour alone.
+            On a phone there is no width for it: the names truncate to
+            "Groce…" and the figures repeat what the ring already shows. The
+            ring keeps identity there by naming the slice you tap in its own
+            centre, and the full list is a tap away on the Budgets screen. */}
+        <ul className="hidden min-w-0 flex-1 flex-col gap-1.5 sm:flex">
           {rows.map((row, index) => (
             <li
               key={row.categoryId ?? row.categoryName}

@@ -1,6 +1,6 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { Delete } from 'lucide-react'
-import { Money } from '@/components/brand/Money'
+import { MoneyRoll } from '@/components/brand/MoneyRoll'
 import { MAX_AMOUNT_CENTS } from '@shared/schemas.ts'
 import { cn } from '@/lib/utils'
 
@@ -29,6 +29,15 @@ export function AmountPad({ cents, onChange, tone = 'inherit' }: AmountPadProps)
     onChange(next)
   }
 
+  /* `push` closes over the amount it is editing, so binding the listener to it
+     directly tore the listener down and re-added it on every keystroke. The ref
+     keeps one subscription for the life of the pad and still reads the current
+     handler, because a keydown can only arrive after a commit. */
+  const pushRef = useRef(push)
+  useEffect(() => {
+    pushRef.current = push
+  })
+
   // Desktop first: the pad is the affordance, the keyboard is the fast path.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -40,24 +49,23 @@ export function AmountPad({ cents, onChange, tone = 'inherit' }: AmountPadProps)
       if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return
       if (/^[0-9]$/.test(event.key)) {
         event.preventDefault()
-        push(event.key as (typeof KEYS)[number])
+        pushRef.current(event.key as (typeof KEYS)[number])
       } else if (event.key === 'Backspace') {
         event.preventDefault()
-        push('del')
+        pushRef.current('del')
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  })
+  }, [])
 
   return (
     <div className="flex flex-col gap-3">
       <div className="flex h-[58px] items-center justify-center rounded-xl border border-border bg-surface/50">
-        <Money
+        <MoneyRoll
           cents={cents}
-          animate
           tone={tone}
-          className="money-hero display-tight text-[38px] leading-none"
+          className="display-tight text-[38px] leading-none"
         />
       </div>
 

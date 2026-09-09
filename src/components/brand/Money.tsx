@@ -71,12 +71,16 @@ function AnimatedMoney({
   className?: string
 }) {
   // NumberFlow only animates a *change*, so the first paint holds zero and the
-  // real figure lands a frame later — the figure counts up on arrival.
-  const [settled, setSettled] = useState(false)
+  // real figure lands a frame later — the figure counts up on arrival. A figure
+  // that already starts at zero has nothing to count up to, so it skips the
+  // deferral: the keypad opens at zero and would otherwise spend an animation
+  // pass going nowhere on every open.
+  const [settled, setSettled] = useState(() => cents === 0)
   useEffect(() => {
+    if (settled) return
     const frame = requestAnimationFrame(() => setSettled(true))
     return () => cancelAnimationFrame(frame)
-  }, [])
+  }, [settled])
 
   return (
     <NumberFlow
@@ -98,7 +102,13 @@ function AnimatedMoney({
        */
       transformTiming={{ duration: 0 }}
       opacityTiming={{ duration: 0 }}
-      spinTiming={{ duration: 700, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' }}
+      /*
+       * 180ms, not 700. At 700 the roll was smooth but sluggish — a figure the
+       * eye waits on for the better part of a second reads as the app being
+       * slow, which is the same complaint as dropped frames from the other end.
+       * This keeps it inside the sub-300ms band the rest of the app animates in.
+       */
+      spinTiming={{ duration: 180, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' }}
       // Reserves its own width so a rolling figure cannot nudge its neighbours.
       isolate
       className={cn('money-flow tabular whitespace-nowrap', className)}

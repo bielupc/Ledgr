@@ -12,6 +12,12 @@ interface DataTableProps<T extends RowData> {
   empty: React.ReactNode
   initialSorting?: SortingState
   rowKey: (row: T) => string
+  /* Below `md` the table is replaced by this, per row. Six columns cannot share
+     390px — `table-fixed` makes them overlap rather than overflow, so the
+     account glyph lands on top of the category. A phone gets the same rows
+     stacked instead, and the sort controls go with the header they belonged
+     to: on a list that reads newest-first there is nothing to sort by hand. */
+  mobileRow?: (row: T) => React.ReactNode
 }
 
 export function DataTable<T extends RowData>({
@@ -21,6 +27,7 @@ export function DataTable<T extends RowData>({
   empty,
   initialSorting,
   rowKey,
+  mobileRow,
 }: DataTableProps<T>) {
   const table = useTable({
     features: tableSetup,
@@ -33,7 +40,21 @@ export function DataTable<T extends RowData>({
   if (!data.length) return <>{empty}</>
 
   return (
-    <div className="w-full overflow-x-auto">
+    <>
+      {mobileRow && (
+        <ul className="flex flex-col md:hidden">
+          {table.getRowModel().rows.map((row) => (
+            <li
+              key={rowKey(row.original)}
+              className="border-b border-border/60 last:border-0"
+            >
+              {mobileRow(row.original)}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className={cn('w-full overflow-x-auto', mobileRow && 'hidden md:block')}>
       {/* Fixed layout: with auto layout the flexible column swallows all the
           slack and leaves a canyon between a short name and its category. */}
       <table className="w-full table-fixed border-collapse">
@@ -119,6 +140,7 @@ export function DataTable<T extends RowData>({
           ))}
         </tbody>
       </table>
-    </div>
+      </div>
+    </>
   )
 }

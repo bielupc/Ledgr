@@ -245,7 +245,10 @@ export default function Transactions() {
 
       <motion.div variants={fadeUp} transition={transition} className="flex flex-col gap-3">
         <Tabs value={view} onValueChange={(next) => setView(next as View)}>
-          <div className="flex flex-wrap items-center justify-between gap-3">
+          {/* Centred on a phone: the row holds nothing else there, and a
+              switcher hard against the left edge reads as the start of a list
+              rather than the control for the one below it. */}
+          <div className="flex flex-wrap items-center justify-center gap-3 sm:justify-between">
             <TabsList>
               {TABS.map((tab) => (
                 <TabsTrigger key={tab.value} value={tab.value}>
@@ -280,6 +283,28 @@ export default function Transactions() {
               isLoading={transfers.isLoading}
               rowKey={(row) => row.id}
               initialSorting={[{ id: 'occurredOn', desc: true }]}
+              mobileRow={(row) => (
+                <button
+                  type="button"
+                  onClick={() => setEditing({ type: 'transfer', row })}
+                  className="flex w-full items-center gap-3 px-3 py-3 text-left active:bg-muted/50"
+                >
+                  <span className="grid size-9 shrink-0 place-items-center rounded-lg border border-border bg-surface">
+                    <ArrowLeftRight className="size-4 text-transfer" strokeWidth={2} />
+                  </span>
+                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    {/* A transfer has no name, so the route is the label. */}
+                    <span className="truncate text-[14px] font-medium">
+                      {row.fromAccountName} → {row.toAccountName}
+                    </span>
+                    <span className="truncate text-[12px] text-subtle-foreground">
+                      {formatDay(row.occurredOn)}
+                      {row.note ? ` · ${row.note}` : ''}
+                    </span>
+                  </span>
+                  <Money cents={row.amountCents} className="shrink-0 text-[14px]" />
+                </button>
+              )}
               empty={
                 <EmptyState
                   icon={ArrowLeftRight}
@@ -306,6 +331,36 @@ export default function Transactions() {
               isLoading={isLoading}
               rowKey={(row) => row.id}
               initialSorting={[{ id: 'occurredOn', desc: true }]}
+              mobileRow={(row) => (
+                <button
+                  type="button"
+                  onClick={() => setEditing({ type: 'transaction', row })}
+                  className="flex w-full items-center gap-3 px-3 py-3 text-left active:bg-muted/50"
+                >
+                  <span className="grid size-9 shrink-0 place-items-center rounded-lg border border-border bg-surface">
+                    <DynamicIcon
+                      name={row.icon ?? row.categoryIcon}
+                      className="size-4 text-muted-foreground"
+                    />
+                  </span>
+                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <span className="truncate text-[14px] font-medium">
+                      {row.name ?? row.categoryName ?? 'Uncategorised'}
+                    </span>
+                    {/* The date alone. The category is already the glyph on
+                        the left, and the account is not what a row is
+                        recognised by — both only crowded the label. */}
+                    <span className="truncate text-[12px] text-subtle-foreground">
+                      {formatDay(row.occurredOn)}
+                    </span>
+                  </span>
+                  <Money
+                    cents={row.amountCents}
+                    tone={row.kind === 'income' ? 'positive' : 'inherit'}
+                    className="shrink-0 text-[14px]"
+                  />
+                </button>
+              )}
               empty={
                 <EmptyState
                   icon={Receipt}

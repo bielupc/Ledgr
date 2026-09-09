@@ -47,8 +47,11 @@ export function FilterBar({
   }, [draft, filters.search, onChange])
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <div className="relative min-w-[180px] flex-1">
+    /* One row from `sm` up. Below it the search takes its own line and the
+       selects share the next: wrapped onto a 390px screen they left the search
+       about 120px, which truncates its own placeholder. */
+    <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+      <div className="relative w-full sm:w-auto sm:min-w-[180px] sm:flex-1">
         <Search
           className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-subtle-foreground"
           strokeWidth={2}
@@ -62,21 +65,23 @@ export function FilterBar({
         />
       </div>
 
-      <FilterSelect
-        value={filters.accountId}
-        onValueChange={(accountId) => onChange({ accountId })}
-        options={accounts}
-        allLabel="All accounts"
-      />
-
-      {categories && (
+      <div className="flex items-center gap-2">
         <FilterSelect
-          value={filters.categoryId}
-          onValueChange={(categoryId) => onChange({ categoryId })}
-          options={categories}
-          allLabel="All categories"
+          value={filters.accountId}
+          onValueChange={(accountId) => onChange({ accountId })}
+          options={accounts}
+          allLabel="All accounts"
         />
-      )}
+
+        {categories && (
+          <FilterSelect
+            value={filters.categoryId}
+            onValueChange={(categoryId) => onChange({ categoryId })}
+            options={categories}
+            allLabel="All categories"
+          />
+        )}
+      </div>
 
       {active && (
         <Button
@@ -106,7 +111,7 @@ function FilterSelect({
 }) {
   return (
     <Select value={value} onValueChange={onValueChange}>
-      <SelectTrigger className="w-[164px] min-w-0 *:data-[slot=select-value]:min-w-0">
+      <SelectTrigger className="min-w-0 flex-1 *:data-[slot=select-value]:min-w-0 sm:w-[164px] sm:flex-none">
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
