@@ -198,7 +198,7 @@ export function BalanceChart({ month }: { month: string }) {
         <EmptyState
           icon={Scale}
           title="Nothing to balance yet"
-          description="Your monthly surplus or deficit shows up here as soon as there are entries on both side."
+          description=""
           size="sm"
         />
       )}
