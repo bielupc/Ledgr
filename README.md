@@ -89,15 +89,27 @@ Everything below is free tier. You need a Cloudflare account and `wrangler`
 logged in (`npx wrangler login`).
 
 1. **Create your own D1 database**: `npx wrangler d1 create ledgr`, then
-   paste the `database_id` it prints into `wrangler.toml`.
+   paste the `database_id` it prints into `wrangler.toml`, replacing the
+   placeholder. Run `git update-index --skip-worktree wrangler.toml`
+   afterwards so git stops tracking further local edits to it, your real
+   ID never risks getting committed.
 2. **Apply the schema**: `npm run db:migrate:remote`.
 3. **Deploy the API**: `npm run deploy:api`. Note the `*.workers.dev` URL it
    prints.
-4. **Point the frontend at it**: put that URL in `VITE_API_URL` in
-   `.env.production`.
+4. **Point the frontend at it**: put that URL in `.env.production.local`
+   (a new file, gitignored) as `VITE_API_URL=...` — Vite prefers `.local`
+   over the committed placeholder in `.env.production` automatically.
 5. **Deploy the frontend**: `npm run deploy:web`. The first run creates a
    Cloudflare Pages project named `ledgr` and prints its `*.pages.dev` URL.
-6. **Close the loop**: put that Pages URL in `PAGES_ORIGIN` in
+6. **Close the loop**: put that Pages URL in `PAGES_ORIGIN` in your local
    `wrangler.toml`, then run `npm run deploy:api` again. This is what the
    Worker checks incoming requests against (`server/index.ts`), so skipping
    it leaves the frontend loading but every API call rejected by CORS.
+
+Want the included GitHub Actions workflow to deploy on every push instead of
+running these by hand? It needs the same values as repo secrets (Settings,
+Secrets and variables, Actions): `CLOUDFLARE_API_TOKEN`,
+`CLOUDFLARE_ACCOUNT_ID`, `D1_DATABASE_ID`, `PAGES_ORIGIN`, `VITE_API_URL`.
+The workflow patches them into its own checkout at deploy time, your
+`wrangler.toml` and `.env.production` in the repo stay placeholders either
+way.
