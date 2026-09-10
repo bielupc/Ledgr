@@ -1,4 +1,4 @@
-import { format, parseISO, subMonths } from 'date-fns'
+import { addDays, format, parseISO, subMonths } from 'date-fns'
 import { newId, today, type DB } from '../server/db.ts'
 import { runJobs } from '../server/jobs.ts'
 
@@ -309,5 +309,191 @@ export async function seed(db: DB): Promise<void> {
   }
 
   await db.batch(ops)
+  await runJobs(db)
+}
+
+// Scale factors matching migrations/0005_investments.sql / server/portfolio.ts.
+const SHARE_SCALE = 100_000_000
+const NAV_SCALE = 1_000_000
+
+const INVESTMENT_MONTHS = 14
+/** Chunk size for the fundPrices batch — a few hundred proven safe by the
+ *  ledger seed's single batch above, but this is an order of magnitude more
+ *  rows, so it's split rather than assumed to fit in one `db.batch()` call. */
+const PRICE_BATCH_SIZE = 300
+
+interface SeedFund {
+  isin: string
+  name: string
+  shortName: string
+  targetBps: number
+  startPrice: number
+  dailyDrift: number
+  dailyVol: number
+  monthlyAmountCents: number
+}
+
+const FUNDS: SeedFund[] = [
+  {
+    isin: 'DEMO00000001',
+    name: 'Global Equity Index Fund',
+    shortName: 'Global Equity',
+    targetBps: 3000,
+    startPrice: 42,
+    dailyDrift: 0.00035,
+    dailyVol: 0.008,
+    monthlyAmountCents: 25_000,
+  },
+  {
+    isin: 'DEMO00000002',
+    name: 'European Value Fund',
+    shortName: 'European Value',
+    targetBps: 2000,
+    startPrice: 68,
+    dailyDrift: 0.00022,
+    dailyVol: 0.006,
+    monthlyAmountCents: 15_000,
+  },
+  {
+    isin: 'DEMO00000003',
+    name: 'Emerging Markets Growth Fund',
+    shortName: 'EM Growth',
+    targetBps: 2000,
+    startPrice: 21,
+    dailyDrift: 0.0004,
+    dailyVol: 0.014,
+    monthlyAmountCents: 15_000,
+  },
+  {
+    isin: 'DEMO00000004',
+    name: 'Green Energy Transition Fund',
+    shortName: 'Green Energy',
+    targetBps: 1500,
+    startPrice: 15,
+    dailyDrift: 0.0003,
+    dailyVol: 0.017,
+    monthlyAmountCents: 10_000,
+  },
+  {
+    isin: 'DEMO00000005',
+    name: 'Global Bond Aggregate Fund',
+    shortName: 'Global Bonds',
+    targetBps: 1500,
+    startPrice: 95,
+    dailyDrift: 0.0001,
+    dailyVol: 0.002,
+    monthlyAmountCents: 10_000,
+  },
+]
+
+/** A daily random-walk price series from `startDate` through `endDate`
+ *  inclusive, keyed by date — floored well above zero so a run of bad noise
+ *  can't ever produce a non-positive price (the `navMicros`/`amountCents`
+ *  columns are `CHECK (... > 0)`). */
+function buildPriceSeries(
+  fund: SeedFund,
+  startDate: string,
+  endDate: string,
+  random: () => number,
+): Map<string, number> {
+  const series = new Map<string, number>()
+  let price = fund.startPrice
+  let cursor = parseISO(startDate)
+  const end = parseISO(endDate)
+  while (cursor <= end) {
+    series.set(format(cursor, 'yyyy-MM-dd'), price)
+    const noise = (random() - 0.5) * 2 * fund.dailyVol
+    price = Math.max(fund.startPrice * 0.15, price * (1 + fund.dailyDrift + noise))
+    cursor = addDays(cursor, 1)
+  }
+  return series
+}
+
+/**
+ * Funds, orders and daily prices for a fictional 5-fund portfolio — the
+ * ledger's `seed()` above has no opinion on investments, so this is a
+ * separate pass. Prices are generated first and orders are derived from them
+ * (an order's own navMicros/shareUnits/amountCents all read off that day's
+ * point in the same series), so every order is internally consistent with
+ * its fund's price history by construction. `ftXid` is pinned to a sentinel
+ * at insert time so `runJobs`' price sync (called below, same as the ledger
+ * seed) never attempts to resolve these fictional ISINs against the real
+ * Financial Times feed — the same fix just applied to the one prod fund
+ * whose real order data turned out incompatible with its real FT price.
+ */
+export async function seedInvestments(db: DB): Promise<void> {
+  const random = rng(20260910)
+  const now = today()
+  const startDate = format(subMonths(parseISO(now), INVESTMENT_MONTHS), 'yyyy-MM-dd')
+
+  const priceSeries = new Map<string, Map<string, number>>()
+  for (const fund of FUNDS) {
+    priceSeries.set(fund.isin, buildPriceSeries(fund, startDate, now, random))
+  }
+
+  const setupOps: D1PreparedStatement[] = []
+  for (const fund of FUNDS) {
+    setupOps.push(
+      db
+        .prepare(
+          `INSERT INTO funds (isin, name, shortName, ftXid, resolvedAt, targetBps, sortOrder)
+           VALUES (?, ?, ?, 'demo-seed', datetime('now'), ?, ?)`,
+        )
+        .bind(fund.isin, fund.name, fund.shortName, fund.targetBps, FUNDS.indexOf(fund)),
+    )
+  }
+
+  for (let m = 0; m < INVESTMENT_MONTHS; m += 1) {
+    const monthDate = subMonths(parseISO(`${now.slice(0, 7)}-01`), INVESTMENT_MONTHS - 1 - m)
+    const monthStr = format(monthDate, 'yyyy-MM')
+    const daysInMonth = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0).getDate()
+    const isCurrentMonth = monthStr === now.slice(0, 7)
+    const lastDay = isCurrentMonth ? Number(now.slice(8, 10)) : daysInMonth
+    if (lastDay < 1) continue
+
+    for (const fund of FUNDS) {
+      // Not every fund every month — a steady but uneven buying pattern
+      // reads more like a real investor than a mechanical monthly ladder.
+      if (random() < 0.3) continue
+
+      const day = 1 + Math.floor(random() * lastDay)
+      const dateStr = `${monthStr}-${String(day).padStart(2, '0')}`
+      const price = priceSeries.get(fund.isin)!.get(dateStr)!
+
+      const targetAmountCents = Math.round(fund.monthlyAmountCents * (0.7 + random() * 0.6))
+      const shareUnits = Math.max(1, Math.round(((targetAmountCents / 100) * SHARE_SCALE) / price))
+      const navMicros = Math.round(price * NAV_SCALE)
+      const amountCents = Math.round((shareUnits / SHARE_SCALE) * (navMicros / NAV_SCALE) * 100)
+
+      setupOps.push(
+        db
+          .prepare(
+            `INSERT INTO investmentOrders
+               (id, brokerOperationId, isin, kind, tradedOn, settledOn, shareUnits, navMicros, amountCents)
+             VALUES (?, ?, ?, 'buy', ?, ?, ?, ?, ?)`,
+          )
+          .bind(newId(), newId(), fund.isin, dateStr, dateStr, shareUnits, navMicros, amountCents),
+      )
+    }
+  }
+
+  await db.batch(setupOps)
+
+  const priceOps: D1PreparedStatement[] = []
+  for (const fund of FUNDS) {
+    for (const [dateStr, price] of priceSeries.get(fund.isin)!) {
+      priceOps.push(
+        db
+          .prepare(
+            `INSERT INTO fundPrices (isin, pricedOn, navMicros, source) VALUES (?, ?, ?, 'order')`,
+          )
+          .bind(fund.isin, dateStr, Math.round(price * NAV_SCALE)),
+      )
+    }
+  }
+  for (let i = 0; i < priceOps.length; i += PRICE_BATCH_SIZE) {
+    await db.batch(priceOps.slice(i, i + PRICE_BATCH_SIZE))
+  }
+
   await runJobs(db)
 }

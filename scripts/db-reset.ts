@@ -1,7 +1,7 @@
 import { execSync } from 'node:child_process'
 import fs from 'node:fs'
 import { openLocalD1 } from './local-d1.ts'
-import { seed } from './seed-data.ts'
+import { seed, seedInvestments } from './seed-data.ts'
 
 const empty = process.argv.includes('--empty')
 
@@ -13,14 +13,20 @@ execSync('wrangler d1 migrations apply ledgr --local --persist-to=.wrangler/stat
 })
 
 const { db, close } = await openLocalD1()
-if (!empty) await seed(db)
+if (!empty) {
+  await seed(db)
+  await seedInvestments(db)
+}
 
 const counts = await db
   .prepare(
     `SELECT (SELECT count(*) FROM accounts) AS accounts,
             (SELECT count(*) FROM transactions) AS transactions,
             (SELECT count(*) FROM transfers) AS transfers,
-            (SELECT count(*) FROM netWorthSnapshots) AS snapshots`,
+            (SELECT count(*) FROM netWorthSnapshots) AS snapshots,
+            (SELECT count(*) FROM funds) AS funds,
+            (SELECT count(*) FROM investmentOrders) AS investmentOrders,
+            (SELECT count(*) FROM fundPrices) AS fundPrices`,
   )
   .first()
 
