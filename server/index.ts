@@ -13,16 +13,33 @@ const app = new Hono<{ Bindings: Env }>()
  * Cloudflare Pages actually supports — see public/_redirects — so this is
  * the real mechanism, not a fallback.
  *
- * Matches the stable Pages domain plus its per-deploy preview subdomains
- * (<hash>.<project>.pages.dev) and localhost for anyone hitting the deployed
- * API directly from a local build.
+ * Matches the Pages domain configured as PAGES_ORIGIN (wrangler.toml) plus
+ * its per-deploy preview subdomains (<hash>.<project>.pages.dev), and
+ * localhost for anyone hitting the deployed API directly from a local build.
+ * Reading it from an env var rather than a hardcoded domain is what lets
+ * this same code work for anyone deploying their own copy — see the
+ * "Deploy to your own Cloudflare account" section in the README.
  */
-const ALLOWED_ORIGINS = [/^https:\/\/([a-z0-9-]+\.)?ledgr-4g0\.pages\.dev$/, /^http:\/\/localhost:\d+$/]
+const LOCALHOST_ORIGIN = /^http:\/\/localhost:\d+$/
+
+function isAllowedOrigin(origin: string, pagesOrigin: string): boolean {
+  if (LOCALHOST_ORIGIN.test(origin)) return true
+  try {
+    const requested = new URL(origin)
+    const configuredHost = new URL(pagesOrigin).host
+    return (
+      requested.protocol === 'https:' &&
+      (requested.host === configuredHost || requested.host.endsWith(`.${configuredHost}`))
+    )
+  } catch {
+    return false
+  }
+}
 
 app.use(
   '/api/*',
   cors({
-    origin: (origin) => (origin && ALLOWED_ORIGINS.some((re) => re.test(origin)) ? origin : null),
+    origin: (origin, c) => (origin && isAllowedOrigin(origin, c.env.PAGES_ORIGIN) ? origin : null),
   }),
 )
 
