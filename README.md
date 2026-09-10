@@ -106,10 +106,7 @@ logged in (`npx wrangler login`).
    Worker checks incoming requests against (`server/index.ts`), so skipping
    it leaves the frontend loading but every API call rejected by CORS.
 
-Want the included GitHub Actions workflow to deploy on every push instead of
-running these by hand? It needs the same values as repo secrets (Settings,
-Secrets and variables, Actions): `CLOUDFLARE_API_TOKEN`,
-`CLOUDFLARE_ACCOUNT_ID`, `D1_DATABASE_ID`, `PAGES_ORIGIN`, `VITE_API_URL`.
-The workflow patches them into its own checkout at deploy time, your
-`wrangler.toml` and `.env.production` in the repo stay placeholders either
-way.
+That's it, deploys from here on are just `npm run deploy:api` /
+`npm run deploy:web` whenever you want to push an update. No GitHub Actions,
+no repo access needed, this is your own machine talking to your own
+Cloudflare account.
