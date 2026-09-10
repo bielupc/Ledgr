@@ -90,9 +90,7 @@ logged in (`npx wrangler login`).
 
 1. **Create your own D1 database**: `npx wrangler d1 create ledgr`, then
    paste the `database_id` it prints into `wrangler.toml`, replacing the
-   placeholder. Run `git update-index --skip-worktree wrangler.toml`
-   afterwards so git stops tracking further local edits to it, your real
-   ID never risks getting committed.
+   placeholder.
 2. **Apply the schema**: `npm run db:migrate:remote`.
 3. **Deploy the API**: `npm run deploy:api`. Note the `*.workers.dev` URL it
    prints.
