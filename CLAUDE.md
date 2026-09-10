@@ -4,7 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Design source
 
-`Ledgr Brand Guidelines C.dc.html` is the authoritative design source — a self-contained page; open it in a browser. It also contains the working Bayer-dither implementation that `src/components/brand/DitherField.tsx` is ported from.
+`DESIGN.md` and the "Brand tokens" section below are the authoritative design
+reference in this repo. The original brand mockup this was designed from
+isn't checked in; `src/components/brand/DitherField.tsx`'s Bayer-dither
+implementation and the tokens in `src/styles/globals.css` are the source of
+truth for anyone continuing the visual work.
 
 ## Commands
 

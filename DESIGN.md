@@ -1,9 +1,9 @@
 # Design
 
-Captured from the implemented system in `src/styles/globals.css` and the authoritative
-source, `Ledgr Brand Guidelines C.dc.html`. The guidelines file is self-contained; open it
-in a browser. It also holds the working Bayer-dither implementation that
-`src/components/brand/DitherField.tsx` is ported from.
+Captured from the implemented system in `src/styles/globals.css`. The original brand
+mockup this was designed from isn't checked into this repo;
+`src/components/brand/DitherField.tsx` is the working Bayer-dither implementation it
+was ported from.
 
 ## Visual Theme
 
