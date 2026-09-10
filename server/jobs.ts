@@ -2,10 +2,12 @@ import { endOfMonth, format, parseISO } from 'date-fns'
 import { dueOccurrences, occurrenceDate } from '../shared/recurrence.ts'
 import type { RecurringRule } from '../shared/types.ts'
 import { newId, today, type DB } from './db.ts'
+import { syncFundPrices } from './prices.ts'
 import { netWorthAsOf } from './queries.ts'
 
 export interface JobReport {
   postedTransactions: number
+  pricesUpdated: number
   snapshotsWritten: number
 }
 
@@ -149,6 +151,9 @@ export async function backfillNetWorthSnapshots(db: DB, throughDate: string = to
 
 export async function runJobs(db: DB, throughDate: string = today()): Promise<JobReport> {
   const postedTransactions = await postDueRecurring(db, throughDate)
+  // Independent of net worth — the portfolio has no effect on account
+  // balances — but shares this same scheduled entry point.
+  const pricesUpdated = await syncFundPrices(db, fetch)
   const snapshotsWritten = await backfillNetWorthSnapshots(db, throughDate)
-  return { postedTransactions, snapshotsWritten }
+  return { postedTransactions, pricesUpdated, snapshotsWritten }
 }

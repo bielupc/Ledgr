@@ -4,18 +4,29 @@ import type {
   Category,
   CategoryTotal,
   DashboardSummary,
+  Fund,
+  FundPriceSeries,
+  Holding,
+  ImportOrdersResult,
+  InvestmentOrderRow,
+  MonthlyContribution,
   MonthlyTotals,
   NetWorthSnapshot,
   Page,
+  PortfolioPoint,
+  PortfolioSummary,
   RecurringRuleRow,
   TransactionRow,
   TransferRow,
 } from '@shared/types.ts'
 import type {
   AccountInput,
+  BrokerOrderInput,
   BudgetInput,
   CategoryInput,
+  FundPatchInput,
   RecurringRuleInput,
+  TargetsInput,
   TransactionInput,
   TransferInput,
 } from '@shared/schemas.ts'
@@ -160,7 +171,27 @@ export const api = {
       request<BudgetStatus[]>(`/analytics/budget-status${search({ month })}`),
   },
 
+  investments: {
+    summary: () => request<PortfolioSummary>('/investments/summary'),
+    holdings: () => request<Holding[]>('/investments/holdings'),
+    series: () => request<PortfolioPoint[]>('/investments/series'),
+    contributions: () => request<MonthlyContribution[]>('/investments/contributions'),
+    funds: () => request<Fund[]>('/investments/funds'),
+    fundPrices: (isin: string) => request<FundPriceSeries>(`/investments/funds/${isin}/prices`),
+    orders: () => request<InvestmentOrderRow[]>('/investments/orders'),
+    importOrders: (orders: BrokerOrderInput[]) =>
+      send<ImportOrdersResult>('POST', '/investments/orders/import', { orders }),
+    setTargets: (input: TargetsInput) => send<{ ok: true }>('PUT', '/investments/targets', input),
+    updateFund: (isin: string, input: FundPatchInput) =>
+      send<Fund>('PATCH', `/investments/funds/${isin}`, input),
+    refreshPrices: () => send<{ updated: number }>('POST', '/investments/prices/refresh'),
+  },
+
   jobs: {
-    run: () => send<{ postedTransactions: number; snapshotsWritten: number }>('POST', '/jobs/run'),
+    run: () =>
+      send<{ postedTransactions: number; pricesUpdated: number; snapshotsWritten: number }>(
+        'POST',
+        '/jobs/run',
+      ),
   },
 }

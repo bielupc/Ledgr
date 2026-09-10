@@ -5,9 +5,12 @@ import {
   accountInputSchema,
   budgetInputSchema,
   categoryInputSchema,
+  fundPatchSchema,
+  importOrdersInputSchema,
   monthSchema,
   recurringRuleInputBaseSchema,
   recurringRuleInputSchema,
+  targetsInputSchema,
   transactionInputSchema,
   transactionQuerySchema,
   transferInputBaseSchema,
@@ -19,6 +22,16 @@ import {
 import { occurrenceDate } from '../shared/recurrence.ts'
 import { newId, nowIso, today, type DB } from './db.ts'
 import { runJobs } from './jobs.ts'
+import {
+  computeHoldings,
+  dailySeries,
+  loadFunds,
+  loadOrders,
+  loadPrices,
+  monthlyContributions,
+  netContributedCents,
+} from './portfolio.ts'
+import { syncFundPrices } from './prices.ts'
 import {
   budgetStatus,
   dashboardSummary,
@@ -480,6 +493,192 @@ export function createApi() {
       .bind(nowIso(), id)
       .run()
     return c.json({ ok: true })
+  })
+
+  /* ------------------------------------------------------ investments --- */
+
+  api.get('/investments/summary', async (c) => {
+    const db = c.env.DB
+    const [funds, orders, prices] = await Promise.all([loadFunds(db), loadOrders(db), loadPrices(db)])
+    const asOf = today()
+
+    const holdings = computeHoldings(funds, orders, prices, asOf)
+    const valueCents = holdings.reduce((sum, h) => sum + h.valueCents, 0)
+    const contributedCents = netContributedCents(orders, asOf)
+    const gainCents = valueCents - contributedCents
+
+    const series = dailySeries(funds, orders, prices, asOf)
+    const last = series[series.length - 1]
+    const prior = series[series.length - 2]
+    const dayChangeCents = last && prior ? last.valueCents - prior.valueCents : 0
+
+    const navAsOf = holdings.reduce<string | null>(
+      (latest, h) => (h.navAsOf && (!latest || h.navAsOf > latest) ? h.navAsOf : latest),
+      null,
+    )
+    const syncedAt = await db
+      .prepare("SELECT value FROM meta WHERE key = 'pricesSyncedAt'")
+      .first<{ value: string }>()
+
+    return c.json({
+      valueCents,
+      contributedCents,
+      gainCents,
+      gainPercent: contributedCents > 0 ? (gainCents / contributedCents) * 100 : null,
+      twrPercent: last ? (last.twrIndex - 1) * 100 : 0,
+      dayChangeCents,
+      navAsOf,
+      syncedAt: syncedAt?.value ?? null,
+    })
+  })
+
+  api.get('/investments/holdings', async (c) => {
+    const db = c.env.DB
+    const [funds, orders, prices] = await Promise.all([loadFunds(db), loadOrders(db), loadPrices(db)])
+    return c.json(computeHoldings(funds, orders, prices, today()))
+  })
+
+  api.get('/investments/series', async (c) => {
+    const db = c.env.DB
+    const [funds, orders, prices] = await Promise.all([loadFunds(db), loadOrders(db), loadPrices(db)])
+    return c.json(dailySeries(funds, orders, prices, today()))
+  })
+
+  api.get('/investments/contributions', async (c) =>
+    c.json(monthlyContributions(await loadOrders(c.env.DB))),
+  )
+
+  api.get('/investments/funds', async (c) => {
+    const { results } = await c.env.DB.prepare('SELECT * FROM funds ORDER BY sortOrder, name').all()
+    return c.json(results)
+  })
+
+  api.get('/investments/funds/:isin/prices', async (c) => {
+    const db = c.env.DB
+    const isin = c.req.param('isin')
+    const [prices, orders] = await Promise.all([
+      db.prepare('SELECT isin, pricedOn, navMicros, source FROM fundPrices WHERE isin = ? ORDER BY pricedOn')
+        .bind(isin)
+        .all(),
+      db
+        .prepare(
+          `SELECT id, brokerOperationId, isin, kind, tradedOn, settledOn, shareUnits, navMicros, amountCents, createdAt
+           FROM investmentOrders WHERE isin = ? ORDER BY tradedOn`,
+        )
+        .bind(isin)
+        .all(),
+    ])
+    return c.json({ prices: prices.results, orders: orders.results })
+  })
+
+  api.get('/investments/orders', async (c) => {
+    const { results } = await c.env.DB.prepare(
+      `SELECT o.*, f.name AS fundName, f.shortName AS fundShortName
+       FROM investmentOrders o
+       JOIN funds f ON f.isin = o.isin
+       ORDER BY o.tradedOn DESC, o.createdAt DESC`,
+    ).all()
+    return c.json(results)
+  })
+
+  // Idempotent on the broker's own operation id, so re-importing the same
+  // export (or an export that overlaps a previous one) only adds what's new.
+  api.post('/investments/orders/import', async (c) => {
+    const db = c.env.DB
+    const input = await body(c, importOrdersInputSchema)
+
+    const isins = [...new Set(input.orders.map((o) => o.isin))]
+    const existing = await db
+      .prepare(`SELECT isin FROM funds WHERE isin IN (${isins.map(() => '?').join(',')})`)
+      .bind(...isins)
+      .all<{ isin: string }>()
+    const known = new Set(existing.results.map((r) => r.isin))
+
+    const fundOps: D1PreparedStatement[] = []
+    let newFunds = 0
+    for (const order of input.orders) {
+      if (known.has(order.isin)) continue
+      known.add(order.isin)
+      newFunds += 1
+      fundOps.push(
+        db
+          .prepare(
+            `INSERT INTO funds (isin, name, sortOrder) VALUES (?, ?, ?)
+             ON CONFLICT (isin) DO NOTHING`,
+          )
+          .bind(order.isin, order.fundName, newFunds),
+      )
+    }
+    if (fundOps.length) await db.batch(fundOps)
+
+    // Each order also seeds its own NAV into fundPrices as a source='order'
+    // fallback point — OR IGNORE so a date FT has already priced is left
+    // alone, since 'ft' always wins over 'order'.
+    const orderOps = input.orders.flatMap((order) => [
+      db
+        .prepare(
+          `INSERT OR IGNORE INTO investmentOrders
+             (id, brokerOperationId, isin, kind, tradedOn, settledOn, shareUnits, navMicros, amountCents)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .bind(
+          newId(),
+          order.brokerOperationId,
+          order.isin,
+          order.kind,
+          order.tradedOn,
+          order.settledOn,
+          order.shareUnits,
+          order.navMicros,
+          order.amountCents,
+        ),
+      db
+        .prepare(
+          `INSERT OR IGNORE INTO fundPrices (isin, pricedOn, navMicros, source) VALUES (?, ?, ?, 'order')`,
+        )
+        .bind(order.isin, order.tradedOn, order.navMicros),
+    ])
+
+    const results = await db.batch(orderOps)
+    // Every order contributes two statements in order; only the first of
+    // each pair inserting a row counts as an imported order.
+    const inserted = results.reduce(
+      (sum, result, index) => sum + (index % 2 === 0 ? (result.meta.changes ?? 0) : 0),
+      0,
+    )
+
+    // Runs after the response so a large first import doesn't make the
+    // upload wait on a dozen FT round-trips; force only when a fund is new,
+    // so a re-import of already-known orders doesn't bypass the throttle.
+    c.executionCtx?.waitUntil(
+      syncFundPrices(db, fetch, { force: newFunds > 0 }).catch((error: unknown) => console.error(error)),
+    )
+
+    return c.json({ inserted, skipped: input.orders.length - inserted, newFunds })
+  })
+
+  api.put('/investments/targets', async (c) => {
+    const db = c.env.DB
+    const input = await body(c, targetsInputSchema)
+    const ops = input.targets.map((t) =>
+      db.prepare('UPDATE funds SET targetBps = ? WHERE isin = ?').bind(t.targetBps, t.isin),
+    )
+    if (ops.length) await db.batch(ops)
+    return c.json({ ok: true })
+  })
+
+  api.patch('/investments/funds/:isin', async (c) => {
+    const db = c.env.DB
+    const isin = c.req.param('isin')
+    const input = await body(c, fundPatchSchema)
+    found(await db.prepare('SELECT isin FROM funds WHERE isin = ?').bind(isin).first(), 'Fund')
+    await db.prepare('UPDATE funds SET shortName = ? WHERE isin = ?').bind(input.shortName ?? null, isin).run()
+    return c.json(await db.prepare('SELECT * FROM funds WHERE isin = ?').bind(isin).first())
+  })
+
+  api.post('/investments/prices/refresh', async (c) => {
+    const updated = await syncFundPrices(c.env.DB, fetch, { force: true })
+    return c.json({ updated })
   })
 
   /* --------------------------------------------------------- analytics --- */

@@ -12,6 +12,15 @@ export const queryKeys = {
   byCategory: (month: string, kind: string) =>
     ['analytics', 'by-category', month, kind] as const,
   budgetStatus: (month: string) => ['analytics', 'budget-status', month] as const,
+  investments: {
+    summary: () => ['investments', 'summary'] as const,
+    holdings: () => ['investments', 'holdings'] as const,
+    series: () => ['investments', 'series'] as const,
+    contributions: () => ['investments', 'contributions'] as const,
+    funds: () => ['investments', 'funds'] as const,
+    fundPrices: (isin: string) => ['investments', 'funds', isin, 'prices'] as const,
+    orders: () => ['investments', 'orders'] as const,
+  },
 }
 
 /** Everything a write can invalidate. Mutations touch balances and analytics

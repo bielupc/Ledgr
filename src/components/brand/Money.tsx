@@ -16,6 +16,11 @@ interface MoneyProps {
   animate?: boolean
   className?: string
   decimalClassName?: string
+  /** Set false to butt the € directly against the figure — a tight inline
+   *  read (e.g. "+2410,14€") rather than the spaced full-amount treatment.
+   *  Has no effect with `animate`: NumberFlow's own currency formatting
+   *  keeps its spacing regardless. */
+  spaced?: boolean
 }
 
 /*
@@ -29,6 +34,7 @@ export function Money({
   animate = false,
   className,
   decimalClassName,
+  spaced = true,
 }: MoneyProps) {
   const toneClass =
     tone === 'auto'
@@ -53,10 +59,20 @@ export function Money({
   return (
     <span className={cn('tabular whitespace-nowrap', toneClass, className)}>
       {displaySign}
-      {currencyFirst && <span className="opacity-45">{currency}&nbsp;</span>}
+      {currencyFirst && (
+        <span className="opacity-45">
+          {currency}
+          {spaced && ' '}
+        </span>
+      )}
       {whole}
       <span className={cn('opacity-45', decimalClassName)}>{fraction}</span>
-      {!currencyFirst && <span className="opacity-45">&nbsp;{currency}</span>}
+      {!currencyFirst && (
+        <span className="opacity-45">
+          {spaced && ' '}
+          {currency}
+        </span>
+      )}
     </span>
   )
 }

@@ -16,6 +16,9 @@ interface EmptyStateProps {
   onSecondary?: () => void
   size?: 'sm' | 'md'
   className?: string
+  /** In place of the button row, for a CTA that isn't a plain click handler —
+   *  the investments import button owns its own file input and toast. */
+  children?: React.ReactNode
 }
 
 /*
@@ -33,6 +36,7 @@ export function EmptyState({
   onSecondary,
   size = 'md',
   className,
+  children,
 }: EmptyStateProps) {
   return (
     <div
@@ -72,19 +76,23 @@ export function EmptyState({
           )}
         </div>
 
-        {(actionLabel ?? secondaryLabel) && (
-          <div className="flex items-center gap-2">
-            {actionLabel && onAction && (
-              <Button size="sm" onClick={onAction}>
-                {actionLabel}
-              </Button>
-            )}
-            {secondaryLabel && onSecondary && (
-              <Button size="sm" variant="ghost" onClick={onSecondary}>
-                {secondaryLabel}
-              </Button>
-            )}
-          </div>
+        {children ? (
+          <div className="flex items-center gap-2">{children}</div>
+        ) : (
+          (actionLabel ?? secondaryLabel) && (
+            <div className="flex items-center gap-2">
+              {actionLabel && onAction && (
+                <Button size="sm" onClick={onAction}>
+                  {actionLabel}
+                </Button>
+              )}
+              {secondaryLabel && onSecondary && (
+                <Button size="sm" variant="ghost" onClick={onSecondary}>
+                  {secondaryLabel}
+                </Button>
+              )}
+            </div>
+          )
         )}
       </motion.div>
     </div>

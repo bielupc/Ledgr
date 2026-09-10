@@ -101,14 +101,20 @@ Three conventions worth knowing before editing:
 
 **Net worth snapshots** — sum of non-deleted account balances, keyed to the first of each month, holding the value as of that month's end (or today for the month in progress). The chart reads snapshots; it must not recompute from full history on load.
 
+**Investment portfolio** — a MyInvestor order history (`funds`, `investmentOrders`, `fundPrices`), deliberately unconnected to accounts or net worth: it is its own surface with its own value, not a balance folded into the ledger. An order's `kind` is `buy`, `sell`, `transferIn` or `transferOut`; the last two are MyInvestor "traspasos" and fund switches, which move a fund's own shares and cost basis but carry no external cash — `netContributedCents` and `monthlyContributions` (`server/portfolio.ts`) read `buy`/`sell` only, the same structural separation transfers get in the main ledger. Shares are `shareUnits` (× 1e8) and NAVs are `navMicros` (× 1e6), stored as exact scaled integers so a fully-sold position closes to precisely zero rather than a float residue — see `shared/brokerOrders.ts`'s `parseScaledDecimal`. Prices come from the Financial Times' unofficial fund-tearsheet and history endpoints (`server/prices.ts`, `syncFundPrices`), throttled to once per 4 hours and resolved by ISIN once per fund; a fund FT can't resolve (or a date it hasn't priced) falls back to the NAV recorded on its own order (`fundPrices.source = 'order'`, always overwritten once `'ft'` lands).
+
 ## Scheduled work — `server/jobs.ts`
 
 Runs in the API process on boot and every 30 minutes, and is exposed at `POST /api/jobs/run`. Cron would be wrong here: the machine is often asleep when something falls due, so jobs instead catch up whatever was missed.
 
-Two invariants hold this together, and both have tests:
+Three steps, in order: post due recurring transactions, sync fund prices, then backfill net worth snapshots. The two are independent of each other — fund prices never feed net worth — but share the one scheduled entry point.
+
+Two invariants hold the recurring side together, and both have tests:
 
 - **Idempotency** comes from a partial unique index on `transactions(recurringRuleId, occurredOn)`. Re-running can never double-post.
 - **Occurrence dates are computed as the *n*th step from `startDate`**, never by advancing a cursor — see `shared/recurrence.ts`. Advancing clamps a Jan-31 rule to Feb 28 and it never recovers the 31st.
+
+The price sync has its own: **idempotency** from `fundPrices`' `(isin, pricedOn)` primary key with an upsert, and a **throttle** (`meta.pricesSyncedAt`) so a fund's once-a-day NAV isn't refetched every 30 minutes.
 
 ## Analytics surface
 
@@ -168,10 +174,18 @@ Minimize comments. Explain non-obvious logic only — never restate what the cod
 
 ## Screens
 
-Dashboard, Transactions, Accounts, Categories, Budgets and Recurring are built. Routes are
-code-split (`React.lazy` in `src/App.tsx`, one `<Suspense>` boundary in `AppShell`): the
-dashboard alone pulls in ECharts and the tables pull in TanStack Table, so loading both up
+Dashboard, Transactions, Accounts, Categories, Budgets, Recurring and Investments are built.
+Routes are code-split (`React.lazy` in `src/App.tsx`, one `<Suspense>` boundary in `AppShell`):
+the dashboard alone pulls in ECharts and the tables pull in TanStack Table, so loading both up
 front would make the first paint wait on code the screen in front of you does not use.
+
+**Investments** (`src/pages/Investments.tsx`, `src/features/investments/`) reads the order
+history: allocation (actual, via `<ShareGrid>`, and target vs. actual with per-fund drift),
+portfolio value and time-weighted return over a range, monthly contributions, and a per-fund
+price chart with buy/sell markers. Orders arrive by uploading MyInvestor's `.xls` export
+(`parseOrdersXls.ts` parses it client-side into the same shape `shared/brokerOrders.ts` tests
+against; the Worker only ever receives validated JSON) and import is idempotent on the broker's
+own operation id, so re-uploading an overlapping export is safe.
 
 Two conventions hold across the management screens:
 
@@ -189,7 +203,6 @@ the one the record already holds. Otherwise the pick silently disappears from it
 
 ## Out of scope for this phase
 
-Mobile-optimized UI and quick-input flows. The **Goals**, **Investments**, **AI agent**,
-**Integrations** and **Reports** routes exist as placeholder tabs so the nav is complete, but
-none is built, Goals has no data model at all, and the MCP server is unwritten. Don't build
-toward them speculatively.
+Mobile-optimized UI and quick-input flows. The **Goals**, **AI agent**, **Integrations** and
+**Reports** routes exist as placeholder tabs so the nav is complete, but none is built, Goals
+has no data model at all, and the MCP server is unwritten. Don't build toward them speculatively.

@@ -1,10 +1,13 @@
 import { useMemo } from 'react'
 import * as echarts from 'echarts/core'
-import { BarChart, LineChart, PieChart } from 'echarts/charts'
+import { BarChart, LineChart, PieChart, ScatterChart } from 'echarts/charts'
 import {
   GridComponent,
   LegendComponent,
+  MarkLineComponent,
+  MarkPointComponent,
   TooltipComponent,
+  VisualMapComponent,
 } from 'echarts/components'
 import { SVGRenderer } from 'echarts/renderers'
 // The lib/ build is CJS and its default interops to a module object under
@@ -22,9 +25,13 @@ echarts.use([
   BarChart,
   LineChart,
   PieChart,
+  ScatterChart,
   GridComponent,
   TooltipComponent,
   LegendComponent,
+  MarkLineComponent,
+  MarkPointComponent,
+  VisualMapComponent,
   SVGRenderer,
 ])
 

@@ -1,6 +1,6 @@
 import { lazy } from 'react'
 import { Route, Routes } from 'react-router'
-import { ChartPie, Flag, Plug, Sparkles, TrendingUp } from 'lucide-react'
+import { ChartPie, Flag, Plug, Sparkles } from 'lucide-react'
 import { AppShell } from '@/components/layout/AppShell'
 import { QuickActionsProvider } from '@/features/quick-actions/QuickActions'
 import { Placeholder } from '@/pages/Placeholder'
@@ -17,6 +17,7 @@ const Accounts = lazy(() => import('@/pages/Accounts'))
 const Categories = lazy(() => import('@/pages/Categories'))
 const Budgets = lazy(() => import('@/pages/Budgets'))
 const Recurring = lazy(() => import('@/pages/Recurring'))
+const Investments = lazy(() => import('@/pages/Investments'))
 
 export default function App() {
   return (
@@ -39,16 +40,7 @@ export default function App() {
             }
           />
           <Route path="recurring" element={<Recurring />} />
-          <Route
-            path="investments"
-            element={
-              <Placeholder
-                icon={TrendingUp}
-                title="Investments land here"
-                description="Holdings and their value over time, kept separate from the day-to-day ledger."
-              />
-            }
-          />
+          <Route path="investments" element={<Investments />} />
           <Route
             path="agent"
             element={

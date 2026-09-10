@@ -25,5 +25,7 @@ dev-dist
 *.sln
 *.sw?
 
-# Notion exports — personal financial records, imported once and kept locally
+# Notion exports and broker order history — personal financial records,
+# imported once and kept locally
 *.csv
+*.xls

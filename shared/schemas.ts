@@ -2,9 +2,14 @@ import { z } from 'zod'
 
 export const CATEGORY_KINDS = ['expense', 'income'] as const
 export const FREQUENCIES = ['daily', 'weekly', 'monthly', 'yearly'] as const
+/** buy/sell are external cash in and out. transferIn/transferOut are
+ *  MyInvestor "traspasos" and fund switches — money moving between funds
+ *  inside the same portfolio, never a contribution. */
+export const ORDER_KINDS = ['buy', 'sell', 'transferIn', 'transferOut'] as const
 
 export type CategoryKind = (typeof CATEGORY_KINDS)[number]
 export type Frequency = (typeof FREQUENCIES)[number]
+export type OrderKind = (typeof ORDER_KINDS)[number]
 
 export const MAX_AMOUNT_CENTS = 100_000_000_000
 
@@ -143,6 +148,48 @@ export const transferQuerySchema = z.object({
   ...pageQuery,
 })
 
+/* ------------------------------------------------------- investments --- */
+
+/** One row of MyInvestor's order-history export, already mapped from its
+ *  Spanish operation names to `OrderKind` — see `shared/brokerOrders.ts`. */
+export const brokerOrderInputSchema = z.object({
+  brokerOperationId: z.string().min(1).max(60),
+  isin: z.string().regex(/^[A-Z0-9]{12}$/, 'Expected a 12-character ISIN'),
+  fundName: z.string().trim().min(1).max(120),
+  kind: z.enum(ORDER_KINDS),
+  tradedOn: isoDate,
+  settledOn: isoDate,
+  // Shares × 1e8 and NAV × 1e6 — see the shareUnits/navMicros comment in
+  // migrations/0005_investments.sql for why these are scaled integers.
+  shareUnits: z.number().int().positive(),
+  navMicros: z.number().int().positive(),
+  amountCents: z.number().int().positive().max(MAX_AMOUNT_CENTS),
+})
+
+export const importOrdersInputSchema = z.object({
+  orders: z.array(brokerOrderInputSchema).min(1).max(2000),
+})
+
+export const targetsInputSchema = z
+  .object({
+    targets: z
+      .array(
+        z.object({
+          isin: z.string().min(1),
+          targetBps: z.number().int().min(0).max(10000),
+        }),
+      )
+      .max(50),
+  })
+  .refine((v) => v.targets.reduce((sum, t) => sum + t.targetBps, 0) <= 10000, {
+    message: 'Targets cannot add up to more than 100%',
+    path: ['targets'],
+  })
+
+export const fundPatchSchema = z.object({
+  shortName: z.string().trim().max(40).optional().nullable(),
+})
+
 export type AccountInput = z.input<typeof accountInputSchema>
 export type CategoryInput = z.input<typeof categoryInputSchema>
 export type TransactionInput = z.infer<typeof transactionInputSchema>
@@ -151,3 +198,7 @@ export type BudgetInput = z.infer<typeof budgetInputSchema>
 export type RecurringRuleInput = z.input<typeof recurringRuleInputSchema>
 export type TransactionQuery = z.infer<typeof transactionQuerySchema>
 export type TransferQuery = z.infer<typeof transferQuerySchema>
+export type BrokerOrderInput = z.infer<typeof brokerOrderInputSchema>
+export type ImportOrdersInput = z.infer<typeof importOrdersInputSchema>
+export type TargetsInput = z.infer<typeof targetsInputSchema>
+export type FundPatchInput = z.infer<typeof fundPatchSchema>

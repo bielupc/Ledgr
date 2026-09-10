@@ -1,4 +1,4 @@
-import type { CategoryKind, Frequency } from './schemas.ts'
+import type { CategoryKind, Frequency, OrderKind } from './schemas.ts'
 
 export interface Account {
   id: string
@@ -140,4 +140,104 @@ export interface DashboardSummary {
   monthExpenseCents: number
   monthBalanceCents: number
   previousNetWorthCents: number | null
+}
+
+/* ------------------------------------------------------- investments --- */
+
+export interface Fund {
+  isin: string
+  name: string
+  shortName: string | null
+  ftXid: string | null
+  resolvedAt: string | null
+  targetBps: number
+  sortOrder: number
+  createdAt: string
+}
+
+export interface InvestmentOrder {
+  id: string
+  brokerOperationId: string
+  isin: string
+  kind: OrderKind
+  tradedOn: string
+  settledOn: string
+  shareUnits: number
+  navMicros: number
+  amountCents: number
+  createdAt: string
+}
+
+/** An order joined to the fund it belongs to, for the orders table. */
+export interface InvestmentOrderRow extends InvestmentOrder {
+  fundName: string
+  fundShortName: string | null
+}
+
+export interface FundPrice {
+  isin: string
+  pricedOn: string
+  navMicros: number
+  source: 'ft' | 'order'
+}
+
+/** One held fund, valued as of today. Funds fully sold (zero shares) are
+ *  never included — see `computeHoldings` in `server/portfolio.ts`. */
+export interface Holding {
+  isin: string
+  name: string
+  shortName: string | null
+  shares: number
+  costBasisCents: number
+  navMicros: number | null
+  navAsOf: string | null
+  valueCents: number
+  gainCents: number
+  gainPercent: number | null
+  targetBps: number
+  weightBps: number
+  driftBps: number
+  /** Positive: buy this much more to reach target. Negative: over target. */
+  toTargetCents: number
+}
+
+/** One day of the portfolio's value history. `twrIndex` is chain-linked from
+ *  1 at the series' first day — a time-weighted return that only external
+ *  buy/sell flows move, so a traspaso between funds never reads as a gain. */
+export interface PortfolioPoint {
+  date: string
+  valueCents: number
+  /** Cumulative net external contribution (buy − sell) as of this date. */
+  contributedCents: number
+  twrIndex: number
+}
+
+export interface PortfolioSummary {
+  valueCents: number
+  contributedCents: number
+  gainCents: number
+  gainPercent: number | null
+  twrPercent: number
+  dayChangeCents: number
+  /** The most recent date any held fund has a price for. */
+  navAsOf: string | null
+  syncedAt: string | null
+}
+
+export interface MonthlyContribution {
+  month: string
+  boughtCents: number
+  soldCents: number
+  netCents: number
+}
+
+export interface FundPriceSeries {
+  prices: FundPrice[]
+  orders: InvestmentOrder[]
+}
+
+export interface ImportOrdersResult {
+  inserted: number
+  skipped: number
+  newFunds: number
 }
