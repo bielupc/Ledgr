@@ -7,11 +7,24 @@ compatibility_date = "2026-09-09"
 # `wrangler d1 migrations apply --remote`. Local dev (`wrangler dev`,
 # `wrangler d1 migrations apply --local`) works against this placeholder
 # unchanged: local D1 state is keyed by the `binding` name, not this id.
+#
+# After editing this file with your real values, run
+# `git update-index --skip-worktree wrangler.toml` so git stops tracking
+# further local changes to it — your real database_id and PAGES_ORIGIN never
+# risk getting committed, even by an untargeted `git add -A`.
 [[d1_databases]]
 binding = "DB"
 database_name = "ledgr"
 database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
 migrations_dir = "migrations"
+
+# The Pages frontend's own domain, read by the Worker's CORS allowlist (see
+# server/index.ts) — Cloudflare only assigns this once you've deployed Pages
+# at least once, so it starts out pointing at a placeholder. Update it to
+# your own *.pages.dev domain (or custom domain) and redeploy the Worker, or
+# the frontend will load but every API call will be rejected by CORS.
+[vars]
+PAGES_ORIGIN = "https://your-project.pages.dev"
 
 # Catch-up for recurring postings, same 30-minute cadence the Node process
 # used to run via setInterval. A Worker has no persistent process to hang
